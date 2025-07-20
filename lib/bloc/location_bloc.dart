@@ -16,6 +16,23 @@ class LocationTeamMembersRequested extends LocationEvent {}
 
 class LocationPermissionRequested extends LocationEvent {}
 
+
+//Para el tracking en tiempo real
+class LocationTrackingInRealTime extends LocationEvent {}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // Estados de ubicación
 abstract class LocationState {}
 
@@ -50,6 +67,31 @@ class LocationError extends LocationState {
   LocationError(this.message);
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // BLoC de ubicación
 class LocationBloc extends Bloc<LocationEvent, LocationState> {
   bool _isTracking = false;
@@ -60,6 +102,10 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     on<LocationStopTracking>(_onStopTracking);
     on<LocationUpdateRequested>(_onUpdateRequested);
     on<LocationTeamMembersRequested>(_onTeamMembersRequested);
+
+
+    //Asociación del evento disparado a la función a ejecutar
+    //on<LocationTrackingInRealTime>(_trackingInRealTime);
   }
 
   Future<void> _onPermissionRequested(
@@ -119,6 +165,37 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
       await LocationService.startLocationTracking();
       _isTracking = true;
 
+
+      while (_isTracking == true)
+      {
+        var position = await LocationService.getCurrentLocation();
+        if (position != null) {
+          var teamLocations = await LocationService.getTeamLocations();
+          emit(
+            LocationTrackingActive(
+              currentPosition: position,
+              teamLocations: teamLocations,
+            ),
+          );
+        }
+
+        await Future.delayed(const Duration(seconds: 5));
+      }
+    } catch (e) {
+      emit(LocationError('Error al iniciar tracking: $e'));
+    }
+  }
+
+/*
+  Future<void> _trackingInRealTime(LocationTrackingInRealTime event, Emitter<LocationState> emit) async
+  {
+    try
+    {
+      if (_isTracking) return;
+      emit(LocationLoading());
+
+       _isTracking = true;
+
       final position = await LocationService.getCurrentLocation();
       if (position != null) {
         final teamLocations = await LocationService.getTeamLocations();
@@ -129,10 +206,11 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
           ),
         );
       }
-    } catch (e) {
-      emit(LocationError('Error al iniciar tracking: $e'));
+    }catch(e)
+    {
+      emit(LocationError('Error durante el tracking: $e'));
     }
-  }
+  }*/
 
   Future<void> _onStopTracking(
     LocationStopTracking event,
@@ -141,7 +219,19 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     try {
       LocationService.stopLocationTracking();
       _isTracking = false;
-      emit(LocationInitial());
+
+      var position = await LocationService.getCurrentLocation();
+      if (position != null) {
+        var teamLocations = await LocationService.getTeamLocations();
+        emit(
+          LocationTrackingActive(
+            currentPosition: position,
+            teamLocations: teamLocations,
+          ),
+        );
+      }
+
+    //  emit(LocationInitial());
     } catch (e) {
       emit(LocationError('Error al detener tracking: $e'));
     }

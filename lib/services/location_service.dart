@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../config/supabase_config.dart';
 import '../models/user_location.dart';
@@ -8,7 +9,7 @@ import 'package:uuid/uuid.dart';
 class LocationService {
   static StreamSubscription<Position>? _positionStreamSubscription;
   static Timer? _locationUpdateTimer;
-  static const int _updateIntervalSeconds = 10; // Actualizar cada 10 segundos
+  static const int _updateIntervalSeconds = 30; // Actualizar cada 10 segundos
 
   // Verificar y solicitar permisos de ubicación
   static Future<bool> requestLocationPermission() async {

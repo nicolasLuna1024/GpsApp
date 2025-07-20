@@ -16,17 +16,36 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
+  
+
   final MapController _mapController = MapController();
-  LatLng _currentCenter = const LatLng(
-    -16.5000,
-    -68.1500,
-  ); // La Paz, Bolivia como centro por defecto
+
+  double _currentZoom = 15.0;
+  LatLng _currentCenter = const LatLng(0, 0);
+  bool _hasCenteredOnce = false;
+
+  void _initialMapCenter(Position nuevoCentro) {
+    final nuevaUbicacion = LatLng(nuevoCentro.latitude, nuevoCentro.longitude);
+    setState(() {
+      _currentCenter = nuevaUbicacion;
+    });
+
+    // Mover el mapa a la ubicación del dispositivo
+    _mapController.move(nuevaUbicacion, _currentZoom);
+  }
+
 
   @override
   void initState() {
     super.initState();
     // Solicitar permisos y empezar tracking al cargar la pantalla
     context.read<LocationBloc>().add(LocationPermissionRequested());
+    
+    _mapController.mapEventStream.listen((event){
+      setState(() {
+        _currentZoom = event.camera.zoom;
+      });
+    });
   }
 
   @override
@@ -53,7 +72,8 @@ class _MapScreenState extends State<MapScreen> {
           ),
         ],
       ),
-      body: BlocListener<LocationBloc, LocationState>(
+      body:
+       BlocListener<LocationBloc, LocationState>(
         listener: (context, state) {
           if (state is LocationPermissionDenied) {
             Fluttertoast.showToast(
@@ -71,14 +91,18 @@ class _MapScreenState extends State<MapScreen> {
               backgroundColor: Colors.red,
               textColor: Colors.white,
             );
-          } else if (state is LocationTrackingActive) {
-            _updateMapCenter(state.currentPosition);
+          } else if (state is LocationTrackingActive && !_hasCenteredOnce) {
+            _initialMapCenter(state.currentPosition);
+            setState(() {
+              _hasCenteredOnce = true;
+            });
           } else if (state is LocationUpdated) {
             _updateMapCenter(state.position);
           }
         },
         child: BlocBuilder<LocationBloc, LocationState>(
-          builder: (context, state) {
+          builder:
+           (context, state) {
             if (state is LocationLoading) {
               return const Center(
                 child: Column(
@@ -94,15 +118,14 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               );
             }
-
             return Stack(
               children: [
                 // Mapa
                 FlutterMap(
                   mapController: _mapController,
                   options: MapOptions(
-                    initialCenter: _currentCenter,
-                    initialZoom: 15.0,
+                    initialCenter: LatLng(0.0, 0.0),
+                    initialZoom: _currentZoom,
                     maxZoom: 18.0,
                     minZoom: 5.0,
                   ),
@@ -355,7 +378,7 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {
       _currentCenter = LatLng(position.latitude, position.longitude);
     });
-    _mapController.move(_currentCenter, 15.0);
+    _mapController.move(_currentCenter, _currentZoom);
   }
 
   void _centerOnCurrentLocation() {
