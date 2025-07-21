@@ -18,8 +18,7 @@ class LocationPermissionRequested extends LocationEvent {}
 
 
 //Para el tracking en tiempo real
-class LocationTrackingInRealTime extends LocationEvent {}
-
+//class LocationTrackingInRealTime extends LocationEvent {}
 
 
 
@@ -67,8 +66,9 @@ class LocationError extends LocationState {
   LocationError(this.message);
 }
 
+class LocationAlwaysPermission extends LocationState {}
 
-
+class LocationPermissionNotAllowed extends LocationState {}
 
 
 
@@ -113,11 +113,23 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     Emitter<LocationState> emit,
   ) async {
     emit(LocationLoading());
-
-    try {
+    
+    
+    try { 
+      final permission = await Geolocator.checkPermission();
+      //if (permission == LocationPermission.always){ return; }
       final hasPermission = await LocationService.requestLocationPermission();
-
-      if (hasPermission) {
+      
+      if (hasPermission && permission != LocationPermission.always) {
+        emit(LocationAlwaysPermission());
+        final permission = await Geolocator.checkPermission();
+        if (permission != LocationPermission.always)
+        {
+          emit(LocationAlwaysPermission());
+        }
+        
+      }
+      else if (hasPermission && permission == LocationPermission.always) {
         final position = await LocationService.getCurrentLocation();
         if (position != null) {
           final teamLocations = await LocationService.getTeamLocations();
@@ -130,7 +142,8 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
         } else {
           emit(LocationError('No se pudo obtener la ubicación actual'));
         }
-      } else {
+      } 
+      else {
         emit(
           LocationPermissionDenied(
             'Se necesitan permisos de ubicación para usar esta función',
@@ -147,12 +160,11 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     Emitter<LocationState> emit,
   ) async {
     if (_isTracking) return;
-
+        
     emit(LocationLoading());
 
     try {
       final hasPermission = await LocationService.requestLocationPermission();
-
       if (!hasPermission) {
         emit(
           LocationPermissionDenied(

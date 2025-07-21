@@ -9,18 +9,17 @@ import 'package:uuid/uuid.dart';
 class LocationService {
   static StreamSubscription<Position>? _positionStreamSubscription;
   static Timer? _locationUpdateTimer;
-  static const int _updateIntervalSeconds = 30; // Actualizar cada 10 segundos
+  static const int _updateIntervalSeconds = 30;
 
-  // Verificar y solicitar permisos de ubicación
+  
+
   static Future<bool> requestLocationPermission() async {
     try {
-      // Verificar si el servicio de ubicación está habilitado
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         throw Exception('Los servicios de ubicación están deshabilitados');
       }
 
-      // Verificar permisos
       LocationPermission permission = await Geolocator.checkPermission();
 
       if (permission == LocationPermission.denied) {
@@ -31,15 +30,18 @@ class LocationService {
       }
 
       if (permission == LocationPermission.deniedForever) {
-        throw Exception('Permisos de ubicación denegados permanentemente');
+        //await Geolocator.openAppSettings();
+        return false;
       }
 
       return true;
     } catch (e) {
-      print('Error al solicitar permisos de ubicación: $e');
+      print('Error al solicitar permisos de ubicación para background_locator_2: $e');
       return false;
     }
   }
+
+
 
   // Obtener ubicación actual
   static Future<Position?> getCurrentLocation() async {

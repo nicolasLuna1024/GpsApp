@@ -1,3 +1,6 @@
+import 'dart:isolate';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -8,6 +11,12 @@ import '../bloc/location_bloc.dart';
 import '../models/user_location.dart';
 import '../services/location_service.dart';
 
+
+
+
+const String isolateName = 'LocatorIsolate';
+
+
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
 
@@ -17,6 +26,7 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   
+
 
   final MapController _mapController = MapController();
 
@@ -83,6 +93,27 @@ class _MapScreenState extends State<MapScreen> {
               backgroundColor: Colors.red,
               textColor: Colors.white,
             );
+            showDialog(
+              context: context,
+              builder: (_) => AlertDialog(
+                title: Text('Permiso adicional requerido'),
+                content: Text(
+                    'Para que la app funcione en segundo plano, debes otorgar el permiso "Permitir todo el tiempo" en la configuración de la app.'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Cancelar'),
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      Navigator.pop(context);
+                      await Geolocator.openAppSettings();
+                    },
+                    child: Text('Abrir configuración'),
+                  ),
+                ],
+              ),
+            );
           } else if (state is LocationError) {
             Fluttertoast.showToast(
               msg: state.message,
@@ -99,6 +130,33 @@ class _MapScreenState extends State<MapScreen> {
           } else if (state is LocationUpdated) {
             _updateMapCenter(state.position);
           }
+          else if (state is LocationAlwaysPermission) {
+            showDialog(
+              context: context,
+              builder: (_) => AlertDialog(
+                title: Text('Permiso adicional requerido'),
+                content: Text(
+                    'Para que la app funcione en segundo plano, debes otorgar el permiso "Permitir todo el tiempo" en la configuración de la app.'),
+                actions: [
+                  TextButton(
+                    //onPressed: (){},
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Cancelar'),
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      Navigator.pop(context);
+                      await Geolocator.openAppSettings();
+                    },
+                    child: Text('Abrir configuración'),
+                  ),
+                ],
+              ),
+            );
+          }
+          /*else if (state is LocationPermissionNotAllowed) {
+            Navigator.pop(context);
+          }*/
         },
         child: BlocBuilder<LocationBloc, LocationState>(
           builder:
