@@ -6,9 +6,10 @@
 -- 1. Tabla de perfiles de usuario (extendiendo auth.users)
 CREATE TABLE public.user_profiles (
     id UUID REFERENCES auth.users(id) PRIMARY KEY,
-    email TEXT NOT NULL, --PONER UNIQUE
+    email TEXT NOT NULL,
     full_name TEXT,
     role TEXT DEFAULT 'topografo' CHECK (role IN ('admin', 'topografo', 'supervisor')),
+    team_id UUID,
     is_active BOOLEAN DEFAULT true,
     avatar_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -22,7 +23,6 @@ CREATE TABLE public.teams (
     description TEXT,
     leader_id UUID REFERENCES public.user_profiles(id),
     is_active BOOLEAN DEFAULT true,
-    users_id JSONB, -- Array de objetos. {id, email, full_name}
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
