@@ -23,15 +23,19 @@ class UserProfile {
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
-      id: json['id'] as String,
-      email: json['email'] as String,
-      fullName: json['full_name'] as String?,
-      role: json['role'] as String? ?? 'topografo',
-      teamId: json['team_id'] as String?,
-      isActive: json['is_active'] as bool? ?? true,
-      avatarUrl: json['avatar_url'] as String?,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      id: json['id']?.toString() ?? '',
+      email: json['email']?.toString() ?? 'Sin correo',
+      fullName: json['full_name']?.toString(),
+      role: json['role']?.toString() ?? 'topografo',
+      teamId: json['team_id']?.toString(),
+      isActive: json['is_active'] ?? true,
+      avatarUrl: json['avatar_url']?.toString(),
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
+          : DateTime.now(),
+      updatedAt: json['updated_at'] != null
+          ? DateTime.tryParse(json['updated_at'].toString()) ?? DateTime.now()
+          : DateTime.now(),
     );
   }
 

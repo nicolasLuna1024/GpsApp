@@ -366,6 +366,7 @@ class _AdminScreenState extends State<AdminScreen>
                     'Equipos (${teams.length})',
                     style: const TextStyle(
                       fontSize: 18,
+
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -516,10 +517,8 @@ class _AdminScreenState extends State<AdminScreen>
   }
 
   Widget _buildTeamCard(Map<String, dynamic> team) {
-    final members = team['user_profiles'] as List<dynamic>? ?? [];
-    final activeMembersCount = members
-        .where((m) => m['is_active'] == true)
-        .length;
+    final members = team['members'] as List<UserProfile>? ?? [];
+    final activeMembersCount = members.where((m) => m.isActive).length;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -551,7 +550,7 @@ class _AdminScreenState extends State<AdminScreen>
         trailing: PopupMenuButton<String>(
           onSelected: (value) => _handleTeamAction(value, team),
           itemBuilder: (context) => [
-            const PopupMenuItem(value: 'view', child: Text('Ver Miembros')),
+            const PopupMenuItem(value: 'view', child: Text('Ver Detalles')),
             const PopupMenuItem(value: 'edit', child: Text('Editar')),
             const PopupMenuItem(
               value: 'manage',
@@ -599,9 +598,13 @@ class _AdminScreenState extends State<AdminScreen>
         break;
       case 'activate':
         context.read<AdminBloc>().add(AdminToggleTeamStatus(team['id'], true));
+        context.read<AdminBloc>().add(AdminLoadTeams());
+        context.read<AdminBloc>().add(AdminLoadUsers());
         break;
       case 'deactivate':
         context.read<AdminBloc>().add(AdminToggleTeamStatus(team['id'], false));
+        context.read<AdminBloc>().add(AdminLoadTeams());
+        context.read<AdminBloc>().add(AdminLoadUsers());
         break;
       case 'delete':
         _showDeleteTeamDialog(context, team);
@@ -1173,13 +1176,15 @@ class _AdminScreenState extends State<AdminScreen>
         child: BlocListener<AdminBloc, AdminState>(
           listener: (context, state) {
             if (state is AdminSuccess) {
-              Navigator.of(context).pop();
+              Navigator.of(dialogContext).pop();
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(state.message),
                   backgroundColor: Colors.green,
                 ),
               );
+              context.read<AdminBloc>().add(AdminLoadTeams());
+              context.read<AdminBloc>().add(AdminLoadUsers());
             } else if (state is AdminError) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -1194,6 +1199,11 @@ class _AdminScreenState extends State<AdminScreen>
               List<UserProfile> users = [];
               if (state is AdminLoaded) {
                 users = state.users.where((user) => user.isActive).toList();
+              }
+
+              if (selectedLeaderId != null &&
+                  !users.any((u) => u.id == selectedLeaderId)) {
+                selectedLeaderId = null;
               }
 
               return StatefulBuilder(
@@ -1266,57 +1276,41 @@ class _AdminScreenState extends State<AdminScreen>
                                   value: null,
                                   child: Text('Sin líder asignado'),
                                 ),
-                                ...users
-                                    .map(
-                                      (user) => DropdownMenuItem<String>(
-                                        value: user.id,
-                                        child: Row(
-                                          children: [
-                                            CircleAvatar(
-                                              radius: 12,
-                                              backgroundColor:
-                                                  user.role == 'admin'
-                                                  ? Colors.red
-                                                  : Colors.green,
-                                              child: Text(
-                                                user.fullName
-                                                        ?.substring(0, 1)
-                                                        .toUpperCase() ??
-                                                    'U',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 10,
-                                                ),
-                                              ),
+                                ...users.map(
+                                  (user) => DropdownMenuItem<String>(
+                                    value: user.id,
+                                    child: Row(
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 12,
+                                          backgroundColor: user.role == 'admin'
+                                              ? Colors.red
+                                              : Colors.green,
+                                          child: Text(
+                                            user.fullName
+                                                    ?.substring(0, 1)
+                                                    .toUpperCase() ??
+                                                'U',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 10,
                                             ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    user.fullName ??
-                                                        'Sin nombre',
-                                                    style: const TextStyle(
-                                                      fontSize: 14,
-                                                    ),
-                                                  ),
-                                                  Text(
-                                                    user.role,
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: Colors.grey[600],
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
+                                          ),
                                         ),
-                                      ),
-                                    )
-                                    .toList(),
+                                        const SizedBox(width: 8),
+                                        SizedBox(
+                                          child: Text(
+                                            user.fullName ?? 'Sin nombre',
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                               ],
                               onChanged: (value) {
                                 setState(() {
@@ -1387,36 +1381,52 @@ class _AdminScreenState extends State<AdminScreen>
                   actions: [
                     TextButton(
                       onPressed: () {
-                        nameController.dispose();
-                        descriptionController.dispose();
-                        Navigator.of(context).pop();
+                        Navigator.of(dialogContext).pop();
                       },
                       child: const Text('Cancelar'),
                     ),
-                    ElevatedButton(
-                      onPressed: () {
-                        if (formKey.currentState!.validate()) {
-                          context.read<AdminBloc>().add(
-                            AdminCreateTeam(
-                              name: nameController.text.trim(),
-                              description:
-                                  descriptionController.text.trim().isEmpty
-                                  ? null
-                                  : descriptionController.text.trim(),
-                              leaderId: selectedLeaderId,
-                            ),
-                          );
+                    BlocBuilder<AdminBloc, AdminState>(
+                      builder: (context, state) {
+                        final isLoading = state is AdminLoading;
 
-                          nameController.dispose();
-                          descriptionController.dispose();
-                          Navigator.of(context).pop();
-                        }
+                        return ElevatedButton(
+                          onPressed: isLoading
+                              ? null
+                              : () {
+                                  if (formKey.currentState!.validate()) {
+                                    // Desactivamos el botón manualmente desde aquí
+                                    context.read<AdminBloc>().add(
+                                      AdminCreateTeam(
+                                        name: nameController.text.trim(),
+                                        description:
+                                            descriptionController.text
+                                                .trim()
+                                                .isEmpty
+                                            ? null
+                                            : descriptionController.text.trim(),
+                                        leaderId: selectedLeaderId,
+                                      ),
+                                    );
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: isLoading
+                                ? Colors.grey
+                                : Colors.blue,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: isLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text('Crear Equipo'),
+                        );
                       },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Crear Equipo'),
                     ),
                   ],
                 ),
@@ -1481,17 +1491,6 @@ class _AdminScreenState extends State<AdminScreen>
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Cerrar'),
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              _showManageTeamMembersDialog(context, team);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.purple,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Gestionar Miembros'),
-          ),
         ],
       ),
     );
@@ -1505,109 +1504,70 @@ class _AdminScreenState extends State<AdminScreen>
     );
     String? selectedLeaderId = team['leader_id'];
 
-    // Obtener el BLoC del contexto actual
     final adminBloc = context.read<AdminBloc>();
+    bool isSaving = false;
 
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => BlocProvider.value(
         value: adminBloc,
-        child: BlocListener<AdminBloc, AdminState>(
-          listener: (context, state) {
-            if (state is AdminSuccess) {
-              nameController.dispose();
-              descriptionController.dispose();
-              Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(state.message),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            } else if (state is AdminError) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(state.message),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          },
-          child: BlocBuilder<AdminBloc, AdminState>(
-            builder: (context, state) {
-              List<UserProfile> users = [];
-              if (state is AdminLoaded) {
-                users = state.users.where((user) => user.isActive).toList();
-              }
+        child: StatefulBuilder(
+          builder: (context, setState) {
+            return BlocListener<AdminBloc, AdminState>(
+              listener: (context, state) {
+                if (state is AdminSuccess) {
+                  setState(() => isSaving = false);
 
-              return StatefulBuilder(
-                builder: (context, setState) => AlertDialog(
-                  title: const Row(
-                    children: [
-                      Icon(Icons.edit, color: Colors.orange),
-                      SizedBox(width: 8),
-                      Text('Editar Equipo'),
-                    ],
-                  ),
-                  content: SizedBox(
-                    width: double.maxFinite,
-                    child: Form(
+                  Future.delayed(const Duration(milliseconds: 100), () {
+                    Navigator.of(context).pop();
+                  });
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(state.message),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+
+                  context.read<AdminBloc>().add(AdminLoadTeams());
+                  context.read<AdminBloc>().add(AdminLoadUsers());
+                } else if (state is AdminError) {
+                  setState(() => isSaving = false);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(state.message),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              child: BlocBuilder<AdminBloc, AdminState>(
+                builder: (context, state) {
+                  List<UserProfile> users = [];
+                  if (state is AdminLoaded) {
+                    users = state.users.where((u) => u.isActive).toList();
+                  }
+
+                  if (selectedLeaderId != null &&
+                      !users.any((u) => u.id == selectedLeaderId)) {
+                    selectedLeaderId = null;
+                  }
+
+                  return AlertDialog(
+                    title: const Row(
+                      children: [
+                        Icon(Icons.edit, color: Colors.orange),
+                        SizedBox(width: 8),
+                        Text('Editar Equipo'),
+                      ],
+                    ),
+                    content: Form(
                       key: formKey,
                       child: SingleChildScrollView(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            // Información del equipo
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.grey[100],
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.grey[300]!),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Row(
-                                    children: [
-                                      Icon(
-                                        Icons.info,
-                                        color: Colors.grey,
-                                        size: 16,
-                                      ),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        'Información del equipo:',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.grey,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'ID: ${team['id']}',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                  Text(
-                                    'Estado: ${team['is_active'] == true ? 'Activo' : 'Inactivo'}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: team['is_active'] == true
-                                          ? Colors.green
-                                          : Colors.red,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-
-                            // Nombre del equipo
                             TextFormField(
                               controller: nameController,
                               decoration: const InputDecoration(
@@ -1617,21 +1577,19 @@ class _AdminScreenState extends State<AdminScreen>
                               ),
                               validator: (value) {
                                 if (value == null || value.trim().isEmpty) {
-                                  return 'El nombre del equipo es requerido';
+                                  return 'Este campo es obligatorio';
                                 }
                                 if (value.trim().length < 3) {
-                                  return 'El nombre debe tener al menos 3 caracteres';
+                                  return 'Mínimo 3 caracteres';
                                 }
                                 return null;
                               },
                             ),
-                            const SizedBox(height: 16),
-
-                            // Descripción
+                            const SizedBox(height: 12),
                             TextFormField(
                               controller: descriptionController,
                               decoration: const InputDecoration(
-                                labelText: 'Descripción (Opcional)',
+                                labelText: 'Descripción (opcional)',
                                 prefixIcon: Icon(Icons.description),
                                 border: OutlineInputBorder(),
                               ),
@@ -1640,160 +1598,113 @@ class _AdminScreenState extends State<AdminScreen>
                                 if (value != null &&
                                     value.trim().isNotEmpty &&
                                     value.trim().length < 10) {
-                                  return 'La descripción debe tener al menos 10 caracteres';
+                                  return 'Mínimo 10 caracteres';
                                 }
                                 return null;
                               },
                             ),
-                            const SizedBox(height: 16),
-
-                            // Líder del equipo
+                            const SizedBox(height: 12),
                             DropdownButtonFormField<String>(
                               value: selectedLeaderId,
+                              isExpanded: true,
                               decoration: const InputDecoration(
-                                labelText: 'Líder del Equipo (Opcional)',
-                                prefixIcon: Icon(Icons.person_pin),
+                                labelText: 'Líder del equipo (opcional)',
+                                prefixIcon: Icon(Icons.person),
                                 border: OutlineInputBorder(),
                               ),
                               items: [
-                                const DropdownMenuItem<String>(
+                                const DropdownMenuItem(
                                   value: null,
                                   child: Text('Sin líder asignado'),
                                 ),
-                                ...users
-                                    .map(
-                                      (user) => DropdownMenuItem<String>(
-                                        value: user.id,
-                                        child: Row(
-                                          children: [
-                                            CircleAvatar(
-                                              radius: 12,
-                                              backgroundColor:
-                                                  user.role == 'admin'
-                                                  ? Colors.red
-                                                  : Colors.green,
-                                              child: Text(
-                                                user.fullName
-                                                        ?.substring(0, 1)
-                                                        .toUpperCase() ??
-                                                    'U',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 10,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    user.fullName ??
-                                                        'Sin nombre',
-                                                    style: const TextStyle(
-                                                      fontSize: 14,
-                                                    ),
-                                                  ),
-                                                  Text(
-                                                    user.role,
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: Colors.grey[600],
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
+                                ...users.map(
+                                  (user) => DropdownMenuItem(
+                                    value: user.id,
+                                    child: Text(user.fullName ?? 'Usuario'),
+                                  ),
+                                ),
                               ],
-                              onChanged: (value) {
-                                setState(() {
-                                  selectedLeaderId = value;
-                                });
-                              },
+                              onChanged: (value) => setState(() {
+                                selectedLeaderId = value;
+                              }),
                             ),
                           ],
                         ),
                       ),
                     ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () {
-                        nameController.dispose();
-                        descriptionController.dispose();
-                        Navigator.of(context).pop();
-                      },
-                      child: const Text('Cancelar'),
-                    ),
-                    ElevatedButton(
-                      onPressed: () {
-                        if (formKey.currentState!.validate()) {
-                          // Solo actualizar si hay cambios
-                          bool hasChanges = false;
-                          String? newName;
-                          String? newDescription;
-                          String? newLeaderId;
-
-                          if (nameController.text.trim() !=
-                              (team['name'] ?? '')) {
-                            newName = nameController.text.trim();
-                            hasChanges = true;
-                          }
-
-                          if (descriptionController.text.trim() !=
-                              (team['description'] ?? '')) {
-                            newDescription =
-                                descriptionController.text.trim().isEmpty
-                                ? null
-                                : descriptionController.text.trim();
-                            hasChanges = true;
-                          }
-
-                          if (selectedLeaderId != team['leader_id']) {
-                            newLeaderId = selectedLeaderId;
-                            hasChanges = true;
-                          }
-
-                          if (hasChanges) {
-                            context.read<AdminBloc>().add(
-                              AdminUpdateTeam(
-                                teamId: team['id'],
-                                name: newName,
-                                description: newDescription,
-                                leaderId: newLeaderId,
-                              ),
-                            );
-                          } else {
-                            nameController.dispose();
-                            descriptionController.dispose();
-                            Navigator.of(context).pop();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('No hay cambios para guardar'),
-                                backgroundColor: Colors.blue,
-                              ),
-                            );
-                          }
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        foregroundColor: Colors.white,
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                        },
+                        child: const Text('Cancelar'),
                       ),
-                      child: const Text('Guardar Cambios'),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
+                      ElevatedButton.icon(
+                        icon: isSaving
+                            ? const SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.save),
+                        label: const Text('Guardar Cambios'),
+                        onPressed: isSaving
+                            ? null
+                            : () {
+                                if (formKey.currentState!.validate()) {
+                                  bool hasChanges = false;
+
+                                  final newName = nameController.text.trim();
+                                  final newDesc =
+                                      descriptionController.text.trim().isEmpty
+                                      ? null
+                                      : descriptionController.text.trim();
+
+                                  if (newName != (team['name'] ?? ''))
+                                    hasChanges = true;
+                                  if ((team['description'] ?? '') !=
+                                      (newDesc ?? ''))
+                                    hasChanges = true;
+                                  if (selectedLeaderId != team['leader_id'])
+                                    hasChanges = true;
+
+                                  if (hasChanges) {
+                                    setState(() => isSaving = true);
+                                    context.read<AdminBloc>().add(
+                                      AdminUpdateTeam(
+                                        teamId: team['id'],
+                                        name: newName,
+                                        description: newDesc,
+                                        leaderId: selectedLeaderId,
+                                      ),
+                                    );
+                                  } else {
+                                    Navigator.of(context).pop();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'No hay cambios para guardar',
+                                        ),
+                                        backgroundColor: Colors.blue,
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            );
+          },
         ),
       ),
     );
@@ -1817,6 +1728,8 @@ class _AdminScreenState extends State<AdminScreen>
                   backgroundColor: Colors.green,
                 ),
               );
+              context.read<AdminBloc>().add(AdminLoadTeams());
+              context.read<AdminBloc>().add(AdminLoadUsers());
             } else if (state is AdminError) {
               Navigator.of(context).pop();
               ScaffoldMessenger.of(context).showSnackBar(
@@ -2090,6 +2003,12 @@ class _AdminScreenState extends State<AdminScreen>
                                                         member.id,
                                                       ),
                                                     );
+                                                    context
+                                                        .read<AdminBloc>()
+                                                        .add(AdminLoadTeams());
+                                                    context
+                                                        .read<AdminBloc>()
+                                                        .add(AdminLoadUsers());
                                                   },
                                                 ),
                                               );
@@ -2149,6 +2068,12 @@ class _AdminScreenState extends State<AdminScreen>
                                                             team['id'],
                                                           ),
                                                         );
+                                                    context
+                                                        .read<AdminBloc>()
+                                                        .add(AdminLoadTeams());
+                                                    context
+                                                        .read<AdminBloc>()
+                                                        .add(AdminLoadUsers());
                                                   },
                                                 ),
                                               );
