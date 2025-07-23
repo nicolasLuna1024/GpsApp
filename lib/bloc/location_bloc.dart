@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/user_location.dart';
@@ -18,7 +20,11 @@ class LocationPermissionRequested extends LocationEvent {}
 
 
 //Para el tracking en tiempo real
-//class LocationTrackingInRealTime extends LocationEvent {}
+class LocationPositionUpdated extends LocationEvent {
+  final currentPosition;
+
+  LocationPositionUpdated(this.currentPosition);
+}
 
 
 
@@ -94,7 +100,13 @@ class LocationPermissionNotAllowed extends LocationState {}
 
 // BLoC de ubicación
 class LocationBloc extends Bloc<LocationEvent, LocationState> {
+  
+  //Para el tracking en tiempo real CON ALMACENAJE EN BD
   bool _isTracking = false;
+
+  //Para el tracking en tiempo real SIN ALMACENAJE EN BD
+  StreamSubscription<Position>? _positionSubscription;
+
 
   LocationBloc() : super(LocationInitial()) {
     on<LocationPermissionRequested>(_onPermissionRequested);
@@ -104,8 +116,16 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     on<LocationTeamMembersRequested>(_onTeamMembersRequested);
 
 
-    //Asociación del evento disparado a la función a ejecutar
-    //on<LocationTrackingInRealTime>(_trackingInRealTime);
+    on<LocationPositionUpdated>((event, emit) async {
+      final teamLocations = await LocationService.getTeamLocations();
+
+      emit(LocationTrackingActive(
+        currentPosition: event.currentPosition,
+        teamLocations: teamLocations,
+      ));
+    });
+
+
   }
 
   Future<void> _onPermissionRequested(
@@ -114,20 +134,13 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
   ) async {
     emit(LocationLoading());
     
-    
     try { 
       final permission = await Geolocator.checkPermission();
-      //if (permission == LocationPermission.always){ return; }
+      
       final hasPermission = await LocationService.requestLocationPermission();
       
       if (hasPermission && permission != LocationPermission.always) {
         emit(LocationAlwaysPermission());
-        final permission = await Geolocator.checkPermission();
-        if (permission != LocationPermission.always)
-        {
-          emit(LocationAlwaysPermission());
-        }
-        
       }
       else if (hasPermission && permission == LocationPermission.always) {
         final position = await LocationService.getCurrentLocation();
@@ -150,79 +163,62 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
           ),
         );
       }
+      
     } catch (e) {
       emit(LocationError('Error al solicitar permisos: $e'));
     }
   }
+
+
+  
+
+  Timer? _dbSaveTimer;
 
   Future<void> _onStartTracking(
     LocationStartTracking event,
     Emitter<LocationState> emit,
   ) async {
     if (_isTracking) return;
-        
+
+    final permission = await Geolocator.checkPermission();
+    if (permission != LocationPermission.always)
+    {
+      emit(LocationAlwaysPermission());
+      return;
+    }
+
     emit(LocationLoading());
 
-    try {
-      final hasPermission = await LocationService.requestLocationPermission();
-      if (!hasPermission) {
-        emit(
-          LocationPermissionDenied(
-            'Se necesitan permisos de ubicación para iniciar el tracking',
-          ),
-        );
-        return;
+    /*
+    final hasPermission = await LocationService.requestLocationPermission();
+    if (!hasPermission) {
+      emit(LocationPermissionDenied(
+          'Se necesitan permisos de ubicación para iniciar el tracking'));
+      return;
+    }*/
+
+    _isTracking = true;
+
+    Position? latestPosition;
+
+    _positionSubscription = LocationService.positionStream.listen(
+      (position) {
+        latestPosition = position;
+        add(LocationPositionUpdated(position));
+      },
+      onError: (error) {
+        emit(LocationError(error.toString()));
+      },
+    );
+
+    // Guarda cada 20 segundos la ubicación actual
+    _dbSaveTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
+      if (latestPosition != null) {
+        await LocationService.saveLocationToDatabase(latestPosition!);
       }
-
-      await LocationService.startLocationTracking();
-      _isTracking = true;
-
-
-      while (_isTracking == true)
-      {
-        var position = await LocationService.getCurrentLocation();
-        if (position != null) {
-          var teamLocations = await LocationService.getTeamLocations();
-          emit(
-            LocationTrackingActive(
-              currentPosition: position,
-              teamLocations: teamLocations,
-            ),
-          );
-        }
-
-        await Future.delayed(const Duration(seconds: 5));
-      }
-    } catch (e) {
-      emit(LocationError('Error al iniciar tracking: $e'));
-    }
+    });
   }
 
-/*
-  Future<void> _trackingInRealTime(LocationTrackingInRealTime event, Emitter<LocationState> emit) async
-  {
-    try
-    {
-      if (_isTracking) return;
-      emit(LocationLoading());
-
-       _isTracking = true;
-
-      final position = await LocationService.getCurrentLocation();
-      if (position != null) {
-        final teamLocations = await LocationService.getTeamLocations();
-        emit(
-          LocationTrackingActive(
-            currentPosition: position,
-            teamLocations: teamLocations,
-          ),
-        );
-      }
-    }catch(e)
-    {
-      emit(LocationError('Error durante el tracking: $e'));
-    }
-  }*/
 
   Future<void> _onStopTracking(
     LocationStopTracking event,
@@ -231,7 +227,9 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     try {
       LocationService.stopLocationTracking();
       _isTracking = false;
-
+      _dbSaveTimer?.cancel();
+      await _positionSubscription?.cancel();
+      _positionSubscription = null;
       var position = await LocationService.getCurrentLocation();
       if (position != null) {
         var teamLocations = await LocationService.getTeamLocations();
@@ -243,7 +241,7 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
         );
       }
 
-    //  emit(LocationInitial());
+    //emit(LocationInitial());
     } catch (e) {
       emit(LocationError('Error al detener tracking: $e'));
     }
@@ -254,6 +252,13 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     Emitter<LocationState> emit,
   ) async {
     try {
+      final permission = await Geolocator.checkPermission();
+      if (permission != LocationPermission.always)
+      {
+        emit(LocationAlwaysPermission());
+        return;
+      }
+
       final position = await LocationService.getCurrentLocation();
       if (position != null) {
         final teamLocations = await LocationService.getTeamLocations();

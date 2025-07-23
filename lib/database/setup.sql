@@ -22,6 +22,8 @@ CREATE TABLE public.teams (
     name TEXT NOT NULL,
     description TEXT,
     leader_id UUID REFERENCES public.user_profiles(id),
+    --Modificación para que los equipos tengan las ids de sus miembros
+    users_id UUID[],
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -119,6 +121,20 @@ USING (
         )
     )
 );
+
+-- ############################## Nueva política para actualizar las locaciones (volver false el true en is_active de los registros anteriores)
+CREATE POLICY "Los usuarios pueden actualizar su propia ubicación"
+ON public.user_locations
+FOR UPDATE
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+-- ############################## Nueva política para listar las locaciones de uno mismo (Permite a los usuarios ver sus propias localizaciones, independientemente del equipo)
+CREATE POLICY "Los usuarios pueden ver su propia ubicación"
+ON public.user_locations
+FOR SELECT
+USING (auth.uid() = user_id);
+
+
 
 -- Políticas para terrains
 CREATE POLICY "Los usuarios pueden crear sus propios terrenos" 
@@ -221,8 +237,12 @@ WITH CHECK (
 -- ===========================================
 
 -- Crear un equipo de ejemplo
-INSERT INTO public.teams (name, description) 
-VALUES ('Equipo Topografía Norte', 'Equipo encargado de la zona norte de la ciudad');
+INSERT INTO public.teams (name, description, users_id) 
+VALUES ('Equipo Topografía Norte', 'Equipo encargado de la zona norte de la ciudad', 
+        array['2510c2d1-8fa5-4d73-8ce8-028f226151f1', '2510c2d1-8fa5-4d73-8ce8-028f226151f1', 
+        '2510c2d1-8fa5-4d73-8ce8-028f226151f1', '2510c2d1-8fa5-4d73-8ce8-028f226151f1']::uuid[]);
+        
 
 -- NOTA: Los usuarios se crearán automáticamente cuando se registren
 -- a través de la aplicación Flutter
+

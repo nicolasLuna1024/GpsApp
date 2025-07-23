@@ -1,6 +1,3 @@
-import 'dart:isolate';
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -26,8 +23,6 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   
-
-
   final MapController _mapController = MapController();
 
   double _currentZoom = 15.0;
@@ -96,12 +91,18 @@ class _MapScreenState extends State<MapScreen> {
             showDialog(
               context: context,
               builder: (_) => AlertDialog(
-                title: Text('Permiso adicional requerido'),
+                title: Text('Permiso requerido'),
                 content: Text(
                     'Para que la app funcione en segundo plano, debes otorgar el permiso "Permitir todo el tiempo" en la configuración de la app.'),
                 actions: [
                   TextButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () {
+                      Navigator.pop(context);
+
+                      if (Navigator.canPop(context)) {
+                        Navigator.pop(context);
+                      }
+                    },
                     child: Text('Cancelar'),
                   ),
                   TextButton(
@@ -134,13 +135,18 @@ class _MapScreenState extends State<MapScreen> {
             showDialog(
               context: context,
               builder: (_) => AlertDialog(
-                title: Text('Permiso adicional requerido'),
+                title: Text('Permiso requerido'),
                 content: Text(
                     'Para que la app funcione en segundo plano, debes otorgar el permiso "Permitir todo el tiempo" en la configuración de la app.'),
                 actions: [
                   TextButton(
-                    //onPressed: (){},
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () {
+                      Navigator.pop(context);
+
+                      if (Navigator.canPop(context)) {
+                        Navigator.pop(context);
+                      }
+                    },
                     child: Text('Cancelar'),
                   ),
                   TextButton(
@@ -154,10 +160,9 @@ class _MapScreenState extends State<MapScreen> {
               ),
             );
           }
-          /*else if (state is LocationPermissionNotAllowed) {
-            Navigator.pop(context);
-          }*/
         },
+
+
         child: BlocBuilder<LocationBloc, LocationState>(
           builder:
            (context, state) {

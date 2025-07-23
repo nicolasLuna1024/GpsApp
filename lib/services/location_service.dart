@@ -91,6 +91,34 @@ class LocationService {
     }
   }
 
+
+
+
+  // Exponer el stream de ubicación directamente
+  static Stream<Position> get positionStream => Geolocator.getPositionStream(
+    locationSettings: const LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 1, // Sensibilidad alta (1m mínimo)
+    ),
+  );
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   // Detener tracking de ubicación
   static void stopLocationTracking() {
     _positionStreamSubscription?.cancel();
@@ -126,6 +154,54 @@ class LocationService {
           .from('user_locations')
           .update({'is_active': false})
           .eq('user_id', user.id);
+
+      // Insertar nueva ubicación
+      await SupabaseConfig.client
+          .from('user_locations')
+          .insert(userLocation.toJson());
+
+      print('Ubicación guardada: ${position.latitude}, ${position.longitude}');
+    } catch (e) {
+      print('Error al guardar ubicación: $e');
+    }
+  }
+
+  // Guardar ubicación en la base de datos
+  static Future<void> saveLocationToDatabase(Position position) async {
+    try {
+      final user = AuthService.currentUser;
+      if (user == null) return;
+
+      final userLocation = UserLocation(
+        id: const Uuid().v4(),
+        userId: user.id,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        altitude: position.altitude,
+        accuracy: position.accuracy,
+        heading: position.heading,
+        speed: position.speed,
+        timestamp: DateTime.now(),
+        isActive: true,
+      );
+
+
+      final seleccion = await SupabaseConfig.client
+          .from('user_locations')
+          .select()
+          .eq('user_id', user.id)
+          .eq('is_active', true);
+
+      print("Ubicaciones seleccionadas: $seleccion");
+
+
+      
+      // Primero desactivar ubicaciones anteriores
+      await SupabaseConfig.client
+      .from('user_locations')
+      .update({'is_active': false})
+      .eq('user_id', user.id)
+      .eq('is_active', true);
 
       // Insertar nueva ubicación
       await SupabaseConfig.client
