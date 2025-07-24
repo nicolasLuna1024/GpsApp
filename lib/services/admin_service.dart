@@ -290,13 +290,29 @@ class AdminService {
     String? leaderId,
   }) async {
     try {
-      await _client.from('teams').insert({
-        'name': name,
-        'description': description,
-        'leader_id': leaderId,
-        'created_at': DateTime.now().toIso8601String(),
-        'updated_at': DateTime.now().toIso8601String(),
-      });
+      final response = await _client
+          .from('teams')
+          .insert({
+            'name': name,
+            'description': description,
+            'leader_id': leaderId,
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .select()
+          .single();
+
+      final teamId = response['id'];
+
+      if (leaderId != null && leaderId.isNotEmpty) {
+        final updateLeader = await _client
+            .from('user_profiles')
+            .update({
+              'team_id': teamId,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('id', leaderId);
+      }
 
       return true;
     } catch (e) {
@@ -339,6 +355,7 @@ class AdminService {
   // =================== MÉTODOS DE GESTIÓN DE EQUIPOS ===================
 
   // Actualizar equipo
+  // Actualizar equipo existente
   static Future<bool> updateTeam({
     required String teamId,
     String? name,
@@ -356,7 +373,19 @@ class AdminService {
 
       updateData['updated_at'] = DateTime.now().toIso8601String();
 
+      // Actualizar el equipo
       await _client.from('teams').update(updateData).eq('id', teamId);
+
+      // Si hay nuevo líder, actualizar también su team_id
+      if (leaderId != null && leaderId.isNotEmpty) {
+        await _client
+            .from('user_profiles')
+            .update({
+              'team_id': teamId,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('id', leaderId);
+      }
 
       return true;
     } catch (e) {

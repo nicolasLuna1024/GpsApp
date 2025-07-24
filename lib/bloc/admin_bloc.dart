@@ -443,6 +443,8 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
     Emitter<AdminState> emit,
   ) async {
     try {
+      emit(AdminLoading());
+
       final isAdmin = await AdminService.isCurrentUserAdmin();
       if (!isAdmin) {
         emit(AdminAccessDenied());
@@ -456,25 +458,6 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
       );
 
       if (success) {
-        // Recargar todos los datos directamente
-        final users = await AdminService.getAllUsers();
-        final stats = await AdminService.getSystemStats();
-        final teams = await AdminService.getTeams();
-        final activeLocations = await AdminService.getAllActiveLocations();
-
-        final currentState = state is AdminLoaded
-            ? state as AdminLoaded
-            : AdminLoaded();
-
-        emit(
-          currentState.copyWith(
-            users: users,
-            stats: stats,
-            teams: teams,
-            activeLocations: activeLocations,
-          ),
-        );
-
         emit(AdminSuccess('Equipo creado exitosamente'));
       } else {
         emit(AdminError('Error al crear equipo'));
@@ -504,25 +487,6 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
       );
 
       if (success) {
-        // Recargar todos los datos directamente
-        final users = await AdminService.getAllUsers();
-        final stats = await AdminService.getSystemStats();
-        final teams = await AdminService.getTeams();
-        final activeLocations = await AdminService.getAllActiveLocations();
-
-        final currentState = state is AdminLoaded
-            ? state as AdminLoaded
-            : AdminLoaded();
-
-        emit(
-          currentState.copyWith(
-            users: users,
-            stats: stats,
-            teams: teams,
-            activeLocations: activeLocations,
-          ),
-        );
-
         emit(AdminSuccess('Equipo actualizado exitosamente'));
       } else {
         emit(AdminError('Error al actualizar equipo'));
@@ -546,25 +510,6 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
       final success = await AdminService.deleteTeam(event.teamId);
 
       if (success) {
-        // Recargar todos los datos directamente
-        final users = await AdminService.getAllUsers();
-        final stats = await AdminService.getSystemStats();
-        final teams = await AdminService.getTeams();
-        final activeLocations = await AdminService.getAllActiveLocations();
-
-        final currentState = state is AdminLoaded
-            ? state as AdminLoaded
-            : AdminLoaded();
-
-        emit(
-          currentState.copyWith(
-            users: users,
-            stats: stats,
-            teams: teams,
-            activeLocations: activeLocations,
-          ),
-        );
-
         emit(AdminSuccess('Equipo eliminado exitosamente'));
       } else {
         emit(AdminError('Error al eliminar equipo'));
@@ -591,25 +536,6 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
       );
 
       if (success) {
-        // Recargar todos los datos directamente
-        final users = await AdminService.getAllUsers();
-        final stats = await AdminService.getSystemStats();
-        final teams = await AdminService.getTeams();
-        final activeLocations = await AdminService.getAllActiveLocations();
-
-        final currentState = state is AdminLoaded
-            ? state as AdminLoaded
-            : AdminLoaded();
-
-        emit(
-          currentState.copyWith(
-            users: users,
-            stats: stats,
-            teams: teams,
-            activeLocations: activeLocations,
-          ),
-        );
-
         emit(AdminSuccess('Estado del equipo actualizado exitosamente'));
       } else {
         emit(AdminError('Error al cambiar estado del equipo'));
@@ -636,29 +562,6 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
       );
 
       if (success) {
-        // Recargar todos los datos directamente
-        final users = await AdminService.getAllUsers();
-        final stats = await AdminService.getSystemStats();
-        final teams = await AdminService.getTeams();
-        final activeLocations = await AdminService.getAllActiveLocations();
-        final availableUsers = await AdminService.getAvailableUsers();
-        final teamMembers = await AdminService.getTeamMembers(event.teamId);
-
-        final currentState = state is AdminLoaded
-            ? state as AdminLoaded
-            : AdminLoaded();
-
-        emit(
-          currentState.copyWith(
-            users: users,
-            stats: stats,
-            teams: teams,
-            activeLocations: activeLocations,
-            availableUsers: availableUsers,
-            teamMembers: teamMembers,
-          ),
-        );
-
         emit(AdminSuccess('Usuario agregado al equipo exitosamente'));
       } else {
         emit(AdminError('Error al agregar usuario al equipo'));
@@ -682,28 +585,6 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
       final success = await AdminService.removeUserFromTeam(event.userId);
 
       if (success) {
-        // Recargar todos los datos directamente
-        final users = await AdminService.getAllUsers();
-        final stats = await AdminService.getSystemStats();
-        final teams = await AdminService.getTeams();
-        final activeLocations = await AdminService.getAllActiveLocations();
-        final availableUsers = await AdminService.getAvailableUsers();
-
-        final currentState = state is AdminLoaded
-            ? state as AdminLoaded
-            : AdminLoaded();
-
-        emit(
-          currentState.copyWith(
-            users: users,
-            stats: stats,
-            teams: teams,
-            activeLocations: activeLocations,
-            availableUsers: availableUsers,
-            teamMembers: [], // Limpiar miembros ya que se removió un usuario
-          ),
-        );
-
         emit(AdminSuccess('Usuario removido del equipo exitosamente'));
       } else {
         emit(AdminError('Error al remover usuario del equipo'));
