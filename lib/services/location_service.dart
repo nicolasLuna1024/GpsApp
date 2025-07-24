@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../config/supabase_config.dart';
 import '../models/user_location.dart';

@@ -8,7 +8,7 @@ CREATE TABLE public.user_profiles (
     id UUID REFERENCES auth.users(id) PRIMARY KEY,
     email TEXT NOT NULL,
     full_name TEXT,
-    role TEXT DEFAULT 'topografo' CHECK (role IN ('admin', 'topografo', 'supervisor')),
+    role TEXT DEFAULT 'topografo' CHECK (role IN ('admin', 'topografo')),
     team_id UUID,
     is_active BOOLEAN DEFAULT true,
     avatar_url TEXT,

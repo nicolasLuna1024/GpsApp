@@ -5,6 +5,7 @@ import '../bloc/auth_bloc.dart';
 import '../bloc/location_bloc.dart';
 import '../bloc/admin_bloc.dart';
 import '../bloc/terrain_bloc.dart';
+import '../bloc/team_bloc.dart';
 import '../models/user_profile.dart';
 import '../utils/debug_service.dart';
 import 'login_screen.dart';
@@ -12,6 +13,7 @@ import 'map_screen.dart';
 import 'admin_screen.dart';
 import 'terrain_list_screen.dart';
 import 'terrain_mapping_screen.dart';
+import 'team_info_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,7 +24,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   @override
-  
   void initState() {
     super.initState();
     // Verificar estado del usuario al cargar la pantalla
@@ -213,10 +214,11 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisCount: 2,
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
+              childAspectRatio: 0.9, // Ajusta la proporción para dar más altura
               children: [
                 _buildOptionCard(
                   context,
-                  title: 'Mapa en Tiempo Real',
+                  title: 'Mapa Tiempo Real',
                   subtitle: 'Ver ubicación del equipo',
                   icon: Icons.map,
                   color: Colors.green,
@@ -291,7 +293,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.group,
                     color: Colors.teal,
                     onTap: () {
-                      _showComingSoon(context, 'Gestión de Equipo');
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => BlocProvider(
+                            create: (context) => TeamBloc(),
+                            child: const TeamInfoScreen(),
+                          ),
+                        ),
+                      );
                     },
                   ),
                 ],
@@ -353,33 +362,37 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.all(20.0),
+          padding: const EdgeInsets.all(16.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width: 50,
-                height: 50,
+                width: 45,
+                height: 45,
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(icon, color: color, size: 28),
+                child: Icon(icon, color: color, size: 24),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               Text(
                 title,
                 style: const TextStyle(
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.bold,
                 ),
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 subtitle,
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -490,16 +503,6 @@ class _HomeScreenState extends State<HomeScreen> {
           Expanded(child: Text(value)),
         ],
       ),
-    );
-  }
-
-  void _showComingSoon(BuildContext context, String feature) {
-    Fluttertoast.showToast(
-      msg: '$feature estará disponible pronto',
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.BOTTOM,
-      backgroundColor: Colors.blue,
-      textColor: Colors.white,
     );
   }
 }
