@@ -419,16 +419,31 @@ class AdminService {
     }
   }
 
-  // Agregar usuario a equipo
+  // Agregar usuario a un equipo (añadir al arreglo users_id[])
   static Future<bool> addUserToTeam(String userId, String teamId) async {
     try {
+      // Obtener arreglo actual
+      final response = await _client
+          .from('teams')
+          .select('users_id')
+          .eq('id', teamId)
+          .single();
+
+      List<dynamic> users = response['users_id'] ?? [];
+
+      // Evitar duplicados
+      if (!users.contains(userId)) {
+        users.add(userId);
+      }
+
+      // Actualizar arreglo
       await _client
-          .from('user_profiles')
+          .from('teams')
           .update({
-            'team_id': teamId,
+            'users_id': users,
             'updated_at': DateTime.now().toIso8601String(),
           })
-          .eq('id', userId);
+          .eq('id', teamId);
 
       return true;
     } catch (e) {
@@ -437,16 +452,29 @@ class AdminService {
     }
   }
 
-  // Remover usuario de equipo
-  static Future<bool> removeUserFromTeam(String userId) async {
+  // Remover usuario de un equipo (eliminar del arreglo users_id[])
+  static Future<bool> removeUserFromTeam(String userId, String teamId) async {
     try {
+      // Obtener arreglo actual
+      final response = await _client
+          .from('teams')
+          .select('users_id')
+          .eq('id', teamId)
+          .single();
+
+      List<dynamic> users = response['users_id'] ?? [];
+
+      // Remover usuario si está en el arreglo
+      users.removeWhere((id) => id == userId);
+
+      // Actualizar arreglo
       await _client
-          .from('user_profiles')
+          .from('teams')
           .update({
-            'team_id': null,
+            'users_id': users,
             'updated_at': DateTime.now().toIso8601String(),
           })
-          .eq('id', userId);
+          .eq('id', teamId);
 
       return true;
     } catch (e) {
@@ -455,21 +483,38 @@ class AdminService {
     }
   }
 
-  // Obtener usuarios disponibles (sin equipo asignado)
-  static Future<List<UserProfile>> getAvailableUsers() async {
+  // Obtener usuarios disponibles
+  static Future<List<UserProfile>> getAvailableUsers(String teamId) async {
     try {
-      final response = await _client
+      // Obtener los IDs de usuarios ya asignados a este equipo
+      final teamResponse = await _client
+          .from('teams')
+          .select('users_id')
+          .eq('id', teamId)
+          .single();
+
+      final assignedUserIds = <String>{};
+      final List<dynamic>? ids = teamResponse['users_id'];
+      if (ids != null) {
+        assignedUserIds.addAll(ids.cast<String>());
+      }
+
+      // Obtener todos los usuarios activos
+      final allUsersResponse = await _client
           .from('user_profiles')
           .select('*')
-          .isFilter('team_id', null)
           .eq('is_active', true)
           .order('full_name', ascending: true);
 
-      return response
+      // Filtrar los que no estén en este equipo
+      final availableUsers = allUsersResponse
+          .where((u) => !assignedUserIds.contains(u['id']))
           .map<UserProfile>((json) => UserProfile.fromJson(json))
           .toList();
+
+      return availableUsers;
     } catch (e) {
-      print('Error al obtener usuarios disponibles: $e');
+      print('Error al obtener usuarios disponibles para equipo $teamId: $e');
       return [];
     }
   }
@@ -477,14 +522,28 @@ class AdminService {
   // Obtener miembros de un equipo específico
   static Future<List<UserProfile>> getTeamMembers(String teamId) async {
     try {
-      final response = await _client
+      // Obtener arreglo de IDs de usuarios del equipo
+      final teamResponse = await _client
+          .from('teams')
+          .select('users_id')
+          .eq('id', teamId)
+          .single();
+
+      final List<dynamic> usersIds = teamResponse['users_id'] ?? [];
+
+      if (usersIds.isEmpty) {
+        return [];
+      }
+
+      // Obtener perfiles de los usuarios en el arreglo
+      final membersResponse = await _client
           .from('user_profiles')
           .select('*')
-          .eq('team_id', teamId)
+          .inFilter('id', usersIds)
           .eq('is_active', true)
           .order('full_name', ascending: true);
 
-      return response
+      return membersResponse
           .map<UserProfile>((json) => UserProfile.fromJson(json))
           .toList();
     } catch (e) {

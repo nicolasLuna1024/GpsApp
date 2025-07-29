@@ -256,7 +256,10 @@ class _TeamMembersDialogState extends State<TeamMembersDialog>
   }
 
   void _removeUserFromTeam(String userId) {
-    context.read<AdminBloc>().add(AdminRemoveUserFromTeam(userId));
+    context.read<AdminBloc>().add(AdminRemoveUserFromTeam(
+      userId,
+      widget.team['id'],
+    ));
   }
 
   void _addUserToTeam(String userId) {

@@ -1841,11 +1841,9 @@ class _AdminScreenState extends State<AdminScreen>
     BuildContext context,
     Map<String, dynamic> team,
   ) {
-    // Obtener el BLoC del contexto actual
     final adminBloc = context.read<AdminBloc>();
 
-    // Cargar datos necesarios
-    adminBloc.add(AdminLoadAvailableUsers());
+    adminBloc.add(AdminLoadAvailableUsers(team['id']));
     adminBloc.add(AdminLoadTeamMembers(team['id']));
 
     showDialog(
@@ -1861,9 +1859,13 @@ class _AdminScreenState extends State<AdminScreen>
                   backgroundColor: Colors.green,
                 ),
               );
-              // Recargar datos
-              adminBloc.add(AdminLoadAvailableUsers());
+
+              adminBloc.add(AdminLoadAvailableUsers(team['id']));
               adminBloc.add(AdminLoadTeamMembers(team['id']));
+
+              adminBloc.add(AdminRefreshTeams());
+              adminBloc.add(AdminLoadUsers());
+              
             } else if (state is AdminError) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -1877,10 +1879,14 @@ class _AdminScreenState extends State<AdminScreen>
             builder: (context, state) {
               List<UserProfile> availableUsers = [];
               List<UserProfile> teamMembers = [];
+              bool isProcessing = false;
 
+              if (state is AdminLoading) {
+                isProcessing = true;
+              }
               if (state is AdminLoaded) {
-                availableUsers = state.availableUsers;
-                teamMembers = state.teamMembers;
+                availableUsers = List.from(state.availableUsers);
+                teamMembers = List.from(state.teamMembers);
               }
 
               return AlertDialog(
@@ -1896,7 +1902,6 @@ class _AdminScreenState extends State<AdminScreen>
                   height: 400,
                   child: Column(
                     children: [
-                      // Información del equipo
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
@@ -1935,7 +1940,6 @@ class _AdminScreenState extends State<AdminScreen>
                       ),
                       const SizedBox(height: 16),
 
-                      // Pestañas
                       Expanded(
                         child: DefaultTabController(
                           length: 2,
@@ -1952,7 +1956,6 @@ class _AdminScreenState extends State<AdminScreen>
                               Expanded(
                                 child: TabBarView(
                                   children: [
-                                    // Miembros actuales
                                     teamMembers.isEmpty
                                         ? const Center(
                                             child: Text(
@@ -1991,30 +1994,36 @@ class _AdminScreenState extends State<AdminScreen>
                                                 subtitle: Text(
                                                   '${member.role} • ${member.email}',
                                                 ),
-                                                trailing: IconButton(
-                                                  icon: const Icon(
-                                                    Icons.remove_circle,
-                                                    color: Colors.red,
-                                                  ),
-                                                  onPressed: () {
-                                                    context.read<AdminBloc>().add(
-                                                      AdminRemoveUserFromTeam(
-                                                        member.id,
+                                                trailing: isProcessing
+                                                    ? const SizedBox(
+                                                        width: 20,
+                                                        height: 20,
+                                                        child:
+                                                            CircularProgressIndicator(
+                                                              strokeWidth: 2,
+                                                            ),
+                                                      )
+                                                    : IconButton(
+                                                        icon: const Icon(
+                                                          Icons.remove_circle,
+                                                          color: Colors.red,
+                                                        ),
+                                                        onPressed: () {
+                                                          teamMembers.removeAt(
+                                                            index,
+                                                          );
+                                                          adminBloc.add(
+                                                            AdminRemoveUserFromTeam(
+                                                              member.id,
+                                                              team['id'],
+                                                            ),
+                                                          );
+                                                        },
                                                       ),
-                                                    );
-                                                    context
-                                                        .read<AdminBloc>()
-                                                        .add(AdminLoadTeams());
-                                                    context
-                                                        .read<AdminBloc>()
-                                                        .add(AdminLoadUsers());
-                                                  },
-                                                ),
                                               );
                                             },
                                           ),
 
-                                    // Agregar miembros
                                     availableUsers.isEmpty
                                         ? const Center(
                                             child: Text(
@@ -2053,28 +2062,32 @@ class _AdminScreenState extends State<AdminScreen>
                                                 subtitle: Text(
                                                   '${user.role} • ${user.email}',
                                                 ),
-                                                trailing: IconButton(
-                                                  icon: const Icon(
-                                                    Icons.add_circle,
-                                                    color: Colors.green,
-                                                  ),
-                                                  onPressed: () {
-                                                    context
-                                                        .read<AdminBloc>()
-                                                        .add(
-                                                          AdminAddUserToTeam(
-                                                            user.id,
-                                                            team['id'],
-                                                          ),
-                                                        );
-                                                    context
-                                                        .read<AdminBloc>()
-                                                        .add(AdminLoadTeams());
-                                                    context
-                                                        .read<AdminBloc>()
-                                                        .add(AdminLoadUsers());
-                                                  },
-                                                ),
+                                                trailing: isProcessing
+                                                    ? const SizedBox(
+                                                        width: 20,
+                                                        height: 20,
+                                                        child:
+                                                            CircularProgressIndicator(
+                                                              strokeWidth: 2,
+                                                            ),
+                                                      )
+                                                    : IconButton(
+                                                        icon: const Icon(
+                                                          Icons.add_circle,
+                                                          color: Colors.green,
+                                                        ),
+                                                        onPressed: () {
+                                                          availableUsers
+                                                              .removeAt(index);
+                                                          teamMembers.add(user);
+                                                          adminBloc.add(
+                                                            AdminAddUserToTeam(
+                                                              user.id,
+                                                              team['id'],
+                                                            ),
+                                                          );
+                                                        },
+                                                      ),
                                               );
                                             },
                                           ),
