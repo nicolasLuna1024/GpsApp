@@ -4,11 +4,14 @@ import '../config/supabase_config.dart';
 import '../models/user_location.dart';
 import '../services/auth_service.dart';
 import 'package:uuid/uuid.dart';
+import 'package:location/location.dart' as loc;
 
 class LocationService {
   static StreamSubscription<Position>? _positionStreamSubscription;
   static Timer? _locationUpdateTimer;
   static const int _updateIntervalSeconds = 30;
+  static loc.Location? _backgroundLocation;
+  static StreamSubscription<loc.LocationData>? _backgroundLocationSubscription;
 
   
 
@@ -88,6 +91,69 @@ class LocationService {
     } catch (e) {
       print('Error al iniciar tracking: $e');
     }
+  }
+
+  /// Inicia el tracking en segundo plano usando la librería Location
+  static Future<void> startBackgroundLocationTracking() async {
+    _backgroundLocation ??= loc.Location();
+    bool _serviceEnabled;
+    loc.PermissionStatus _permissionGranted;
+
+    _serviceEnabled = await _backgroundLocation!.serviceEnabled();
+    if (!_serviceEnabled) {
+      _serviceEnabled = await _backgroundLocation!.requestService();
+      if (!_serviceEnabled) {
+        print('Servicio de ubicación no habilitado para background');
+        return;
+      }
+    }
+
+    _permissionGranted = await _backgroundLocation!.hasPermission();
+    if (_permissionGranted == loc.PermissionStatus.denied) {
+      _permissionGranted = await _backgroundLocation!.requestPermission();
+      if (_permissionGranted != loc.PermissionStatus.granted && _permissionGranted != loc.PermissionStatus.grantedLimited) {
+        print('Permiso de ubicación no concedido para background');
+        return;
+      }
+    }
+
+    // Configura para background
+    await _backgroundLocation!.enableBackgroundMode(enable: true);
+    _backgroundLocation!.changeSettings(
+      accuracy:  loc.LocationAccuracy.high,
+      interval: 20000, // 20 segundos
+      distanceFilter: 0,
+    );
+
+    _backgroundLocationSubscription = _backgroundLocation!.onLocationChanged.listen((loc.LocationData data) async {
+      if (data.latitude != null && data.longitude != null) {
+        // Convierte LocationData a Position-like para reutilizar el guardado
+        final position = Position(
+          latitude: data.latitude!,
+          longitude: data.longitude!,
+          timestamp: DateTime.now(),
+          accuracy: data.accuracy ?? 0.0,
+          altitude: data.altitude ?? 0.0,
+          heading: data.heading ?? 0.0,
+          speed: data.speed ?? 0.0,
+          speedAccuracy: data.speedAccuracy ?? 0.0,
+          altitudeAccuracy: data.verticalAccuracy ?? 0.0,
+          headingAccuracy: data.headingAccuracy ?? 0.0
+        );
+        await saveLocationToDatabase(position);
+      }
+    });
+    print('Tracking en segundo plano iniciado');
+  }
+
+  /// Detiene el tracking en segundo plano
+  static Future<void> stopBackgroundLocationTracking() async {
+    await _backgroundLocationSubscription?.cancel();
+    _backgroundLocationSubscription = null;
+    if (_backgroundLocation != null) {
+      await _backgroundLocation!.enableBackgroundMode(enable: false);
+    }
+    print('Tracking en segundo plano detenido');
   }
 
 

@@ -45,5 +45,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Esta aplicación necesita acceder a tu ubicación incluso en segundo plano para el tracking en tiempo real.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Esta aplicación necesita acceder a tu ubicación para mostrar tu posición en el mapa.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Esta aplicación necesita acceder a tu ubicación siempre para el tracking en segundo plano.</string>
 </dict>
 </plist>

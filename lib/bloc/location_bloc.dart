@@ -189,18 +189,10 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
 
     emit(LocationLoading());
 
-    /*
-    final hasPermission = await LocationService.requestLocationPermission();
-    if (!hasPermission) {
-      emit(LocationPermissionDenied(
-          'Se necesitan permisos de ubicación para iniciar el tracking'));
-      return;
-    }*/
-
     _isTracking = true;
 
+    // Iniciar tracking normal
     Position? latestPosition;
-
     _positionSubscription = LocationService.positionStream.listen(
       (position) {
         latestPosition = position;
@@ -217,6 +209,9 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
         await LocationService.saveLocationToDatabase(latestPosition!);
       }
     });
+
+    // Iniciar tracking en segundo plano
+    await LocationService.startBackgroundLocationTracking();
   }
 
 
@@ -230,6 +225,8 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
       _dbSaveTimer?.cancel();
       await _positionSubscription?.cancel();
       _positionSubscription = null;
+      // Detener tracking en segundo plano
+      await LocationService.stopBackgroundLocationTracking();
       var position = await LocationService.getCurrentLocation();
       if (position != null) {
         var teamLocations = await LocationService.getTeamLocations();
