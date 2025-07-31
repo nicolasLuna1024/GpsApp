@@ -516,8 +516,8 @@ class _AdminScreenState extends State<AdminScreen>
   }
 
   Widget _buildTeamCard(Map<String, dynamic> team) {
-    final members = team['members'] as List<UserProfile>? ?? [];
-    final activeMembersCount = members.where((m) => m.isActive).length;
+    final members = (team['users_id'] as List?) ?? [];
+    final activeMembersCount = team['active_members_count'] ?? 0;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1843,6 +1843,7 @@ class _AdminScreenState extends State<AdminScreen>
   ) {
     final adminBloc = context.read<AdminBloc>();
 
+    // Cargar datos iniciales
     adminBloc.add(AdminLoadAvailableUsers(team['id']));
     adminBloc.add(AdminLoadTeamMembers(team['id']));
 
@@ -1853,19 +1854,18 @@ class _AdminScreenState extends State<AdminScreen>
         child: BlocListener<AdminBloc, AdminState>(
           listener: (context, state) {
             if (state is AdminSuccess) {
+              // Recargar listas cuando hay cambios exitosos
+              adminBloc.add(AdminLoadAvailableUsers(team['id']));
+              adminBloc.add(AdminLoadTeamMembers(team['id']));
+              adminBloc.add(AdminLoadTeams());
+              context.read<AdminBloc>().add(AdminLoadUsers());
+
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(state.message),
                   backgroundColor: Colors.green,
                 ),
               );
-
-              adminBloc.add(AdminLoadAvailableUsers(team['id']));
-              adminBloc.add(AdminLoadTeamMembers(team['id']));
-
-              adminBloc.add(AdminRefreshTeams());
-              adminBloc.add(AdminLoadUsers());
-              
             } else if (state is AdminError) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -1877,6 +1877,7 @@ class _AdminScreenState extends State<AdminScreen>
           },
           child: BlocBuilder<AdminBloc, AdminState>(
             builder: (context, state) {
+              // Variables desde el Bloc
               List<UserProfile> availableUsers = [];
               List<UserProfile> teamMembers = [];
               bool isProcessing = false;
@@ -1885,8 +1886,8 @@ class _AdminScreenState extends State<AdminScreen>
                 isProcessing = true;
               }
               if (state is AdminLoaded) {
-                availableUsers = List.from(state.availableUsers);
-                teamMembers = List.from(state.teamMembers);
+                availableUsers = state.availableUsers;
+                teamMembers = state.teamMembers;
               }
 
               return AlertDialog(
@@ -1902,6 +1903,7 @@ class _AdminScreenState extends State<AdminScreen>
                   height: 400,
                   child: Column(
                     children: [
+                      // Información del equipo
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
@@ -1956,6 +1958,7 @@ class _AdminScreenState extends State<AdminScreen>
                               Expanded(
                                 child: TabBarView(
                                   children: [
+                                    // TAB: Miembros Actuales
                                     teamMembers.isEmpty
                                         ? const Center(
                                             child: Text(
@@ -2009,9 +2012,6 @@ class _AdminScreenState extends State<AdminScreen>
                                                           color: Colors.red,
                                                         ),
                                                         onPressed: () {
-                                                          teamMembers.removeAt(
-                                                            index,
-                                                          );
                                                           adminBloc.add(
                                                             AdminRemoveUserFromTeam(
                                                               member.id,
@@ -2024,6 +2024,7 @@ class _AdminScreenState extends State<AdminScreen>
                                             },
                                           ),
 
+                                    // TAB: Agregar Miembros
                                     availableUsers.isEmpty
                                         ? const Center(
                                             child: Text(
@@ -2077,9 +2078,6 @@ class _AdminScreenState extends State<AdminScreen>
                                                           color: Colors.green,
                                                         ),
                                                         onPressed: () {
-                                                          availableUsers
-                                                              .removeAt(index);
-                                                          teamMembers.add(user);
                                                           adminBloc.add(
                                                             AdminAddUserToTeam(
                                                               user.id,

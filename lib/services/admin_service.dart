@@ -247,34 +247,42 @@ class AdminService {
   // Obtener equipos disponibles
   static Future<List<Map<String, dynamic>>> getTeams() async {
     try {
+      // Traer equipos con todos sus datos
       final response = await _client
           .from('teams')
-          .select('''
-            *,
-            user_profiles!fk_user_profiles_team(id, full_name, email, role, is_active),
-            leader:user_profiles!teams_leader_id_fkey(id, full_name, email, role)
-          ''')
+          .select('id, name, description, users_id, is_active')
           .order('name', ascending: true);
 
-      // Procesar la respuesta para agregar la lista de miembros
-      final processedTeams = response.map<Map<String, dynamic>>((team) {
+      final processedTeams = <Map<String, dynamic>>[];
+
+      for (final team in response) {
         final teamData = Map<String, dynamic>.from(team);
 
-        // Convertir user_profiles a members para mayor claridad
-        final userProfiles = teamData['user_profiles'] as List<dynamic>?;
-        if (userProfiles != null) {
-          teamData['members'] = userProfiles
-              .map((profile) => UserProfile.fromJson(profile))
+        // Obtener IDs de usuarios desde users_id[]
+        final List<dynamic> userIds = teamData['users_id'] ?? [];
+
+        List<UserProfile> members = [];
+        if (userIds.isNotEmpty) {
+          // Obtener perfiles de esos IDs
+          final membersResponse = await _client
+              .from('user_profiles')
+              .select('id, full_name, email, role, is_active')
+              .inFilter('id', userIds);
+
+          members = membersResponse
+              .map<UserProfile>((json) => UserProfile.fromJson(json))
               .toList();
-        } else {
-          teamData['members'] = <UserProfile>[];
         }
 
-        // Remover la clave user_profiles original para evitar confusión
-        teamData.remove('user_profiles');
+        // Contar miembros activos
+        final activeMembersCount = members.where((m) => m.isActive).length;
 
-        return teamData;
-      }).toList();
+        // Agregar info calculada
+        teamData['members'] = members;
+        teamData['active_members_count'] = activeMembersCount;
+
+        processedTeams.add(teamData);
+      }
 
       return processedTeams;
     } catch (e) {
@@ -298,21 +306,10 @@ class AdminService {
             'leader_id': leaderId,
             'created_at': DateTime.now().toIso8601String(),
             'updated_at': DateTime.now().toIso8601String(),
+            'users_id': leaderId != null ? [leaderId] : [],
           })
           .select()
           .single();
-
-      final teamId = response['id'];
-
-      if (leaderId != null && leaderId.isNotEmpty) {
-        final updateLeader = await _client
-            .from('user_profiles')
-            .update({
-              'team_id': teamId,
-              'updated_at': DateTime.now().toIso8601String(),
-            })
-            .eq('id', leaderId);
-      }
 
       return true;
     } catch (e) {
@@ -373,19 +370,23 @@ class AdminService {
 
       updateData['updated_at'] = DateTime.now().toIso8601String();
 
+      // Añadir el leader id a users_id
+      if (leaderId != null) {
+        final teamResponse = await _client
+            .from('teams')
+            .select('users_id')
+            .eq('id', teamId)
+            .single();
+
+        List<dynamic> users = teamResponse['users_id'] ?? [];
+        if (!users.contains(leaderId)) {
+          users.add(leaderId);
+          updateData['users_id'] = users;
+        }
+      }
+
       // Actualizar el equipo
       await _client.from('teams').update(updateData).eq('id', teamId);
-
-      // Si hay nuevo líder, actualizar también su team_id
-      if (leaderId != null && leaderId.isNotEmpty) {
-        await _client
-            .from('user_profiles')
-            .update({
-              'team_id': teamId,
-              'updated_at': DateTime.now().toIso8601String(),
-            })
-            .eq('id', leaderId);
-      }
 
       return true;
     } catch (e) {
@@ -397,11 +398,17 @@ class AdminService {
   // Eliminar equipo (soft delete)
   static Future<bool> deleteTeam(String teamId) async {
     try {
-      // Primero remover todos los usuarios del equipo
+      // Primero remover todos los usuarios del equipo de team
       await _client
-          .from('user_profiles')
-          .update({'team_id': null})
-          .eq('team_id', teamId);
+          .from('teams')
+          .update({'users_id': []})
+          .eq('id', teamId);
+
+      // Remover el leader id 
+      await _client
+          .from('teams')
+          .update({'leader_id': null})
+          .eq('id', teamId);
 
       // Luego marcar el equipo como inactivo
       await _client
@@ -466,6 +473,13 @@ class AdminService {
 
       // Remover usuario si está en el arreglo
       users.removeWhere((id) => id == userId);
+
+      // Si el usuario es el líder, removerlo también
+      await _client
+          .from('teams')
+          .update({'leader_id': null})
+          .eq('id', teamId)
+          .eq('leader_id', userId);
 
       // Actualizar arreglo
       await _client

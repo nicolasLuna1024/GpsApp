@@ -205,34 +205,8 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
     on<AdminRemoveUserFromTeam>(_onRemoveUserFromTeam);
     on<AdminLoadAvailableUsers>(_onLoadAvailableUsers);
     on<AdminLoadTeamMembers>(_onLoadTeamMembers);
-    on<AdminLoadUserHistory>(_onLoadUserHistory);
-    on<AdminRefreshTeams>(_onRefreshTeams);
-  }
+    on<AdminLoadUserHistory>(_onLoadUserHistory);  }
   
-  Future<void> _onRefreshTeams(
-    AdminRefreshTeams event,
-    Emitter<AdminState> emit,
-  ) async {
-    try {
-      final isAdmin = await AdminService.isCurrentUserAdmin();
-      if (!isAdmin) {
-        emit(AdminAccessDenied());
-        return;
-      }
-
-      final teams = await AdminService.getTeams();
-
-      final currentState = state is AdminLoaded
-          ? state as AdminLoaded
-          : AdminLoaded();
-
-      emit(
-        currentState.copyWith(teams: List<Map<String, dynamic>>.from(teams)),
-      );
-    } catch (e) {
-      emit(AdminError('Error al refrescar equipos: $e'));
-    }
-  }
 
   Future<void> _onLoadUsers(
     AdminLoadUsers event,
