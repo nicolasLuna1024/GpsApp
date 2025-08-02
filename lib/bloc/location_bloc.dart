@@ -26,6 +26,13 @@ class LocationPositionUpdated extends LocationEvent {
   LocationPositionUpdated(this.currentPosition);
 }
 
+//Para el tracking visual sin guardar en BD
+class LocationVisualPositionUpdated extends LocationEvent {
+  final Position currentPosition;
+
+  LocationVisualPositionUpdated(this.currentPosition);
+}
+
 
 
 
@@ -104,8 +111,14 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
   //Para el tracking en tiempo real CON ALMACENAJE EN BD
   bool _isTracking = false;
 
-  //Para el tracking en tiempo real SIN ALMACENAJE EN BD
+  //Para el tracking en tiempo real SIN ALMACENAJE EN BD (solo visual)
   StreamSubscription<Position>? _positionSubscription;
+  
+  //Para el tracking visual cuando no está guardando en BD
+  StreamSubscription<Position>? _visualTrackingSubscription;
+  
+  //Timer para actualizaciones periódicas del estado visual
+  Timer? _visualUpdateTimer;
 
 
   LocationBloc() : super(LocationInitial()) {
@@ -114,7 +127,6 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     on<LocationStopTracking>(_onStopTracking);
     on<LocationUpdateRequested>(_onUpdateRequested);
     on<LocationTeamMembersRequested>(_onTeamMembersRequested);
-
 
     on<LocationPositionUpdated>((event, emit) async {
       final teamLocations = await LocationService.getTeamLocations();
@@ -125,6 +137,14 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
       ));
     });
 
+    on<LocationVisualPositionUpdated>((event, emit) async {
+      final teamLocations = await LocationService.getTeamLocations();
+
+      emit(LocationUpdated(
+        position: event.currentPosition,
+        teamLocations: teamLocations,
+      ));
+    });
 
   }
 
@@ -146,9 +166,13 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
         final position = await LocationService.getCurrentLocation();
         if (position != null) {
           final teamLocations = await LocationService.getTeamLocations();
+          
+          // Iniciar tracking visual automáticamente
+          _startVisualTracking();
+          
           emit(
-            LocationTrackingActive(
-              currentPosition: position,
+            LocationUpdated(
+              position: position,
               teamLocations: teamLocations,
             ),
           );
@@ -173,6 +197,7 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
   
 
   Timer? _dbSaveTimer;
+  Timer? _trackingUpdateTimer;
 
   Future<void> _onStartTracking(
     LocationStartTracking event,
@@ -191,27 +216,73 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
 
     _isTracking = true;
 
-    // Iniciar tracking normal
-    Position? latestPosition;
-    _positionSubscription = LocationService.positionStream.listen(
-      (position) {
-        latestPosition = position;
-        add(LocationPositionUpdated(position));
-      },
-      onError: (error) {
-        emit(LocationError(error.toString()));
-      },
-    );
+    // Detener tracking visual ya que ahora usaremos tracking con BD
+    _stopVisualTracking();
 
-    // Guarda cada 20 segundos la ubicación actual
-    _dbSaveTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
-      if (latestPosition != null) {
-        await LocationService.saveLocationToDatabase(latestPosition!);
+    try {
+      // Iniciar tracking normal
+      Position? latestPosition;
+      _positionSubscription = LocationService.positionStream.listen(
+        (position) {
+          latestPosition = position;
+          // Emitir actualización inmediada para fluidez en tiempo real
+          add(LocationPositionUpdated(position));
+        },
+        onError: (error) {
+          print('Error en tracking con BD: $error');
+          // No emitir error inmediatamente, intentar recuperar
+          Future.delayed(Duration(seconds: 5), () {
+            if (_isTracking && latestPosition != null) {
+              add(LocationPositionUpdated(latestPosition!));
+            }
+          });
+        },
+      );
+
+      // Guarda cada 30 segundos la ubicación actual en BD (menos agresivo)
+      _dbSaveTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+        if (latestPosition != null) {
+          await LocationService.saveLocationToDatabase(latestPosition!);
+          print('Ubicación enviada a BD: ${latestPosition!.latitude}, ${latestPosition!.longitude}');
+        }
+      });
+
+      // Timer adicional para asegurar actualizaciones de UI durante tracking
+      _trackingUpdateTimer = Timer.periodic(const Duration(seconds: 8), (_) async {
+        if (_isTracking && latestPosition != null) {
+          try {
+            final teamLocations = await LocationService.getTeamLocations();
+            add(LocationPositionUpdated(latestPosition!));
+          } catch (e) {
+            print('Error en actualización periódica de tracking: $e');
+          }
+        }
+      });
+
+      // Iniciar tracking en segundo plano después de un pequeño delay
+      Future.delayed(Duration(seconds: 3), () async {
+        if (_isTracking) {
+          await LocationService.startBackgroundLocationTracking();
+        }
+      });
+    } catch (e) {
+      print('Error al iniciar tracking: $e');
+      _isTracking = false;
+      _dbSaveTimer?.cancel();
+      _trackingUpdateTimer?.cancel();
+      await _positionSubscription?.cancel();
+      _positionSubscription = null;
+      
+      emit(LocationError('Error al iniciar tracking: $e'));
+      
+      // Volver al tracking visual
+      final position = await LocationService.getCurrentLocation();
+      if (position != null) {
+        final teamLocations = await LocationService.getTeamLocations();
+        _startVisualTracking();
+        emit(LocationUpdated(position: position, teamLocations: teamLocations));
       }
-    });
-
-    // Iniciar tracking en segundo plano
-    await LocationService.startBackgroundLocationTracking();
+    }
   }
 
 
@@ -223,22 +294,32 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
       LocationService.stopLocationTracking();
       _isTracking = false;
       _dbSaveTimer?.cancel();
+      _trackingUpdateTimer?.cancel();
       await _positionSubscription?.cancel();
       _positionSubscription = null;
       // Detener tracking en segundo plano
       await LocationService.stopBackgroundLocationTracking();
+      
+      // Limpiar registros de BD del usuario
+      await LocationService.deactivateUserLocations();
+      
       var position = await LocationService.getCurrentLocation();
       if (position != null) {
         var teamLocations = await LocationService.getTeamLocations();
+        
+        // Mantener el tracking visual
+        if (_visualTrackingSubscription == null) {
+          _startVisualTracking();
+        }
+        
         emit(
-          LocationTrackingActive(
-            currentPosition: position,
+          LocationUpdated(
+            position: position,
             teamLocations: teamLocations,
           ),
         );
       }
 
-    //emit(LocationInitial());
     } catch (e) {
       emit(LocationError('Error al detener tracking: $e'));
     }
@@ -259,6 +340,12 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
       final position = await LocationService.getCurrentLocation();
       if (position != null) {
         final teamLocations = await LocationService.getTeamLocations();
+        
+        // Si no está haciendo tracking con BD, asegurar que el visual esté activo
+        if (!_isTracking && _visualTrackingSubscription == null) {
+          _startVisualTracking();
+        }
+        
         emit(LocationUpdated(position: position, teamLocations: teamLocations));
       }
     } catch (e) {
@@ -297,11 +384,64 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
 
   bool get isTracking => _isTracking;
 
+  // Iniciar tracking visual sin guardar en BD
+  void _startVisualTracking() {
+    if (_isTracking) return; // No iniciar visual si ya está el tracking con BD
+    
+    _visualTrackingSubscription?.cancel();
+    _visualUpdateTimer?.cancel();
+    
+    Position? lastPosition;
+    
+    // Stream principal para tracking visual
+    _visualTrackingSubscription = LocationService.visualPositionStream.listen(
+      (position) {
+        lastPosition = position;
+        add(LocationVisualPositionUpdated(position));
+      },
+      onError: (error) {
+        print('Error en tracking visual (no crítico): $error');
+        // En caso de error, intentar de nuevo después de un delay
+        Future.delayed(Duration(seconds: 10), () {
+          if (!_isTracking && _visualTrackingSubscription == null) {
+            _startVisualTracking();
+          }
+        });
+      },
+    );
+    
+    // Timer adicional para asegurar actualizaciones periódicas
+    _visualUpdateTimer = Timer.periodic(Duration(seconds: 10), (_) async {
+      if (!_isTracking) {
+        try {
+          final position = await LocationService.getCurrentLocation();
+          if (position != null) {
+            lastPosition = position;
+            add(LocationVisualPositionUpdated(position));
+          }
+        } catch (e) {
+          print('Error en actualización periódica visual: $e');
+        }
+      }
+    });
+  }
+
+  // Detener tracking visual
+  void _stopVisualTracking() {
+    _visualTrackingSubscription?.cancel();
+    _visualTrackingSubscription = null;
+    _visualUpdateTimer?.cancel();
+    _visualUpdateTimer = null;
+  }
+
   @override
   Future<void> close() {
     if (_isTracking) {
       LocationService.stopLocationTracking();
     }
+    _dbSaveTimer?.cancel();
+    _trackingUpdateTimer?.cancel();
+    _stopVisualTracking();
     return super.close();
   }
 }
