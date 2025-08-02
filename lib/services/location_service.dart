@@ -13,21 +13,7 @@ class LocationService {
   static loc.Location? _backgroundLocation;
   static StreamSubscription<loc.LocationData>? _backgroundLocationSubscription;
 
-  // 🆕 Variable para almacenar el ID de la sesión colaborativa activa
-  static String? _activeCollaborativeSessionId;
-
-  // 🆕 Método para establecer la sesión colaborativa activa
-  static void setActiveCollaborativeSession(String? sessionId) {
-    _activeCollaborativeSessionId = sessionId;
-    print(
-      'Sesión colaborativa activa establecida: $_activeCollaborativeSessionId',
-    );
-  }
-
-  // 🆕 Método para obtener la sesión colaborativa activa
-  static String? getActiveCollaborativeSession() {
-    return _activeCollaborativeSessionId;
-  }
+  
 
   static Future<bool> requestLocationPermission() async {
     try {
@@ -52,12 +38,12 @@ class LocationService {
 
       return true;
     } catch (e) {
-      print(
-        'Error al solicitar permisos de ubicación para background_locator_2: $e',
-      );
+      print('Error al solicitar permisos de ubicación para background_locator_2: $e');
       return false;
     }
   }
+
+
 
   // Obtener ubicación actual
   static Future<Position?> getCurrentLocation() async {
@@ -109,39 +95,42 @@ class LocationService {
 
   /// Inicia el tracking en segundo plano usando la librería Location
   static Future<void> startBackgroundLocationTracking() async {
-    _backgroundLocation ??= loc.Location();
-    bool _serviceEnabled;
-    loc.PermissionStatus _permissionGranted;
+    try {
+      _backgroundLocation ??= loc.Location();
+      bool _serviceEnabled;
+      loc.PermissionStatus _permissionGranted;
 
-    _serviceEnabled = await _backgroundLocation!.serviceEnabled();
-    if (!_serviceEnabled) {
-      _serviceEnabled = await _backgroundLocation!.requestService();
+      _serviceEnabled = await _backgroundLocation!.serviceEnabled();
       if (!_serviceEnabled) {
-        print('Servicio de ubicación no habilitado para background');
-        return;
+        _serviceEnabled = await _backgroundLocation!.requestService();
+        if (!_serviceEnabled) {
+          print('Servicio de ubicación no habilitado para background');
+          return;
+        }
       }
-    }
 
-    _permissionGranted = await _backgroundLocation!.hasPermission();
-    if (_permissionGranted == loc.PermissionStatus.denied) {
-      _permissionGranted = await _backgroundLocation!.requestPermission();
-      if (_permissionGranted != loc.PermissionStatus.granted &&
-          _permissionGranted != loc.PermissionStatus.grantedLimited) {
-        print('Permiso de ubicación no concedido para background');
-        return;
+      _permissionGranted = await _backgroundLocation!.hasPermission();
+      if (_permissionGranted == loc.PermissionStatus.denied) {
+        _permissionGranted = await _backgroundLocation!.requestPermission();
+        if (_permissionGranted != loc.PermissionStatus.granted && _permissionGranted != loc.PermissionStatus.grantedLimited) {
+          print('Permiso de ubicación no concedido para background');
+          return;
+        }
       }
-    }
 
-    // Configura para background
-    await _backgroundLocation!.enableBackgroundMode(enable: true);
-    _backgroundLocation!.changeSettings(
-      accuracy: loc.LocationAccuracy.high,
-      interval: 20000, // 20 segundos
-      distanceFilter: 0,
-    );
+      // Detener subscription anterior si existe
+      await _backgroundLocationSubscription?.cancel();
 
-    _backgroundLocationSubscription = _backgroundLocation!.onLocationChanged
-        .listen((loc.LocationData data) async {
+      // Configura para background con parámetros menos agresivos
+      await _backgroundLocation!.enableBackgroundMode(enable: true);
+      _backgroundLocation!.changeSettings(
+        accuracy: loc.LocationAccuracy.high,
+        interval: 30000, // 30 segundos (menos agresivo)
+        distanceFilter: 5, // 5 metros de filtro
+      );
+
+      _backgroundLocationSubscription = _backgroundLocation!.onLocationChanged.listen(
+        (loc.LocationData data) async {
           if (data.latitude != null && data.longitude != null) {
             // Convierte LocationData a Position-like para reutilizar el guardado
             final position = Position(
@@ -154,12 +143,20 @@ class LocationService {
               speed: data.speed ?? 0.0,
               speedAccuracy: data.speedAccuracy ?? 0.0,
               altitudeAccuracy: data.verticalAccuracy ?? 0.0,
-              headingAccuracy: data.headingAccuracy ?? 0.0,
+              headingAccuracy: data.headingAccuracy ?? 0.0
             );
             await saveLocationToDatabase(position);
           }
-        });
-    print('Tracking en segundo plano iniciado');
+        },
+        onError: (error) {
+          print('Error en background location: $error');
+        },
+      );
+      
+      print('Tracking en segundo plano iniciado');
+    } catch (e) {
+      print('Error al iniciar background tracking: $e');
+    }
   }
 
   /// Detiene el tracking en segundo plano
@@ -172,13 +169,43 @@ class LocationService {
     print('Tracking en segundo plano detenido');
   }
 
-  // Exponer el stream de ubicación directamente
+
+
+
+  // Stream para tracking con guardado en BD (más preciso)
   static Stream<Position> get positionStream => Geolocator.getPositionStream(
     locationSettings: const LocationSettings(
       accuracy: LocationAccuracy.high,
-      distanceFilter: 1, // Sensibilidad alta (1m mínimo)
+      distanceFilter: 5, // Filtro de 5 metros para reducir sensibilidad
+      timeLimit: Duration(seconds: 30), // Timeout generoso
     ),
   );
+
+  // Stream para tracking visual solamente (menos agresivo)
+  static Stream<Position> get visualPositionStream => Geolocator.getPositionStream(
+    locationSettings: const LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 5, // Filtro de 5 metros para reducir sensibilidad
+      timeLimit: Duration(seconds: 30),
+    ),
+  );
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   // Detener tracking de ubicación
   static void stopLocationTracking() {
@@ -208,8 +235,6 @@ class LocationService {
         speed: position.speed,
         timestamp: DateTime.now(),
         isActive: true,
-        collaborativeSessionId:
-            _activeCollaborativeSessionId, // 🆕 Incluir ID de sesión
       );
 
       // Primero desactivar ubicaciones anteriores
@@ -224,9 +249,6 @@ class LocationService {
           .insert(userLocation.toJson());
 
       print('Ubicación guardada: ${position.latitude}, ${position.longitude}');
-      if (_activeCollaborativeSessionId != null) {
-        print('Asociada a sesión colaborativa: $_activeCollaborativeSessionId');
-      }
     } catch (e) {
       print('Error al guardar ubicación: $e');
     }
@@ -249,9 +271,8 @@ class LocationService {
         speed: position.speed,
         timestamp: DateTime.now(),
         isActive: true,
-        collaborativeSessionId:
-            _activeCollaborativeSessionId, // 🆕 Incluir ID de sesión
       );
+
 
       final seleccion = await SupabaseConfig.client
           .from('user_locations')
@@ -261,12 +282,14 @@ class LocationService {
 
       print("Ubicaciones seleccionadas: $seleccion");
 
+
+      
       // Primero desactivar ubicaciones anteriores
       await SupabaseConfig.client
-          .from('user_locations')
-          .update({'is_active': false})
-          .eq('user_id', user.id)
-          .eq('is_active', true);
+      .from('user_locations')
+      .update({'is_active': false})
+      .eq('user_id', user.id)
+      .eq('is_active', true);
 
       // Insertar nueva ubicación
       await SupabaseConfig.client
@@ -371,5 +394,23 @@ class LocationService {
       centerLon,
     );
     return distance <= radiusInMeters;
+  }
+
+  // Desactivar todas las ubicaciones activas del usuario actual
+  static Future<void> deactivateUserLocations() async {
+    try {
+      final user = AuthService.currentUser;
+      if (user == null) return;
+
+      await SupabaseConfig.client
+          .from('user_locations')
+          .update({'is_active': false})
+          .eq('user_id', user.id)
+          .eq('is_active', true);
+
+      print('Ubicaciones del usuario desactivadas');
+    } catch (e) {
+      print('Error al desactivar ubicaciones del usuario: $e');
+    }
   }
 }

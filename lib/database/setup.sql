@@ -9,6 +9,7 @@ CREATE TABLE public.user_profiles (
     email TEXT NOT NULL,
     full_name TEXT,
     role TEXT DEFAULT 'topografo' CHECK (role IN ('admin', 'topografo')),
+    --Ha eliminar
     team_id UUID,
     is_active BOOLEAN DEFAULT true,
     avatar_url TEXT,
@@ -245,4 +246,3 @@ VALUES ('Equipo Topografía Norte', 'Equipo encargado de la zona norte de la ciu
 
 -- NOTA: Los usuarios se crearán automáticamente cuando se registren
 -- a través de la aplicación Flutter
-

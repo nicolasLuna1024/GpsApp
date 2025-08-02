@@ -18,12 +18,32 @@ class LocationTeamMembersRequested extends LocationEvent {}
 
 class LocationPermissionRequested extends LocationEvent {}
 
+
 //Para el tracking en tiempo real
 class LocationPositionUpdated extends LocationEvent {
   final currentPosition;
 
   LocationPositionUpdated(this.currentPosition);
 }
+
+//Para el tracking visual sin guardar en BD
+class LocationVisualPositionUpdated extends LocationEvent {
+  final Position currentPosition;
+
+  LocationVisualPositionUpdated(this.currentPosition);
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 // Estados de ubicación
 abstract class LocationState {}
@@ -63,13 +83,43 @@ class LocationAlwaysPermission extends LocationState {}
 
 class LocationPermissionNotAllowed extends LocationState {}
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // BLoC de ubicación
 class LocationBloc extends Bloc<LocationEvent, LocationState> {
+  
   //Para el tracking en tiempo real CON ALMACENAJE EN BD
   bool _isTracking = false;
 
-  //Para el tracking en tiempo real SIN ALMACENAJE EN BD
+  //Para el tracking en tiempo real SIN ALMACENAJE EN BD (solo visual)
   StreamSubscription<Position>? _positionSubscription;
+  
+  //Para el tracking visual cuando no está guardando en BD
+  StreamSubscription<Position>? _visualTrackingSubscription;
+  
+  //Timer para actualizaciones periódicas del estado visual
+  Timer? _visualUpdateTimer;
+
 
   LocationBloc() : super(LocationInitial()) {
     on<LocationPermissionRequested>(_onPermissionRequested);
@@ -81,13 +131,21 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     on<LocationPositionUpdated>((event, emit) async {
       final teamLocations = await LocationService.getTeamLocations();
 
-      emit(
-        LocationTrackingActive(
-          currentPosition: event.currentPosition,
-          teamLocations: teamLocations,
-        ),
-      );
+      emit(LocationTrackingActive(
+        currentPosition: event.currentPosition,
+        teamLocations: teamLocations,
+      ));
     });
+
+    on<LocationVisualPositionUpdated>((event, emit) async {
+      final teamLocations = await LocationService.getTeamLocations();
+
+      emit(LocationUpdated(
+        position: event.currentPosition,
+        teamLocations: teamLocations,
+      ));
+    });
+
   }
 
   Future<void> _onPermissionRequested(
@@ -95,113 +153,173 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     Emitter<LocationState> emit,
   ) async {
     emit(LocationLoading());
-
-    try {
+    
+    try { 
       final permission = await Geolocator.checkPermission();
-
+      
       final hasPermission = await LocationService.requestLocationPermission();
-
+      
       if (hasPermission && permission != LocationPermission.always) {
         emit(LocationAlwaysPermission());
-      } else if (hasPermission && permission == LocationPermission.always) {
+      }
+      else if (hasPermission && permission == LocationPermission.always) {
         final position = await LocationService.getCurrentLocation();
         if (position != null) {
           final teamLocations = await LocationService.getTeamLocations();
+          
+          // Iniciar tracking visual automáticamente
+          _startVisualTracking();
+          
           emit(
-            LocationTrackingActive(
-              currentPosition: position,
+            LocationUpdated(
+              position: position,
               teamLocations: teamLocations,
             ),
           );
         } else {
           emit(LocationError('No se pudo obtener la ubicación actual'));
         }
-      } else {
+      } 
+      else {
         emit(
           LocationPermissionDenied(
             'Se necesitan permisos de ubicación para usar esta función',
           ),
         );
       }
+      
     } catch (e) {
       emit(LocationError('Error al solicitar permisos: $e'));
     }
   }
 
+
+  
+
   Timer? _dbSaveTimer;
+  Timer? _trackingUpdateTimer;
 
   Future<void> _onStartTracking(
     LocationStartTracking event,
     Emitter<LocationState> emit,
   ) async {
-    if (_isTracking || isClosed) return;
+    if (_isTracking) return;
 
     final permission = await Geolocator.checkPermission();
-    if (permission != LocationPermission.always) {
-      if (!isClosed) emit(LocationAlwaysPermission());
+    if (permission != LocationPermission.always)
+    {
+      emit(LocationAlwaysPermission());
       return;
     }
 
-    if (!isClosed) emit(LocationLoading());
+    emit(LocationLoading());
 
     _isTracking = true;
 
-    // Iniciar tracking normal
-    Position? latestPosition;
-    _positionSubscription = LocationService.positionStream.listen(
-      (position) {
-        latestPosition = position;
-        if (!isClosed) {
+    // Detener tracking visual ya que ahora usaremos tracking con BD
+    _stopVisualTracking();
+
+    try {
+      // Iniciar tracking normal
+      Position? latestPosition;
+      _positionSubscription = LocationService.positionStream.listen(
+        (position) {
+          latestPosition = position;
+          // Emitir actualización inmediada para fluidez en tiempo real
           add(LocationPositionUpdated(position));
-        }
-      },
-      onError: (error) {
-        if (!isClosed) {
-          emit(LocationError(error.toString()));
-        }
-      },
-    );
+        },
+        onError: (error) {
+          print('Error en tracking con BD: $error');
+          // No emitir error inmediatamente, intentar recuperar
+          Future.delayed(Duration(seconds: 5), () {
+            if (_isTracking && latestPosition != null) {
+              add(LocationPositionUpdated(latestPosition!));
+            }
+          });
+        },
+      );
 
-    // Guarda cada 20 segundos la ubicación actual
-    _dbSaveTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
-      if (latestPosition != null && !isClosed) {
-        await LocationService.saveLocationToDatabase(latestPosition!);
+      // Guarda cada 30 segundos la ubicación actual en BD (menos agresivo)
+      _dbSaveTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+        if (latestPosition != null) {
+          await LocationService.saveLocationToDatabase(latestPosition!);
+          print('Ubicación enviada a BD: ${latestPosition!.latitude}, ${latestPosition!.longitude}');
+        }
+      });
+
+      // Timer adicional para asegurar actualizaciones de UI durante tracking
+      _trackingUpdateTimer = Timer.periodic(const Duration(seconds: 8), (_) async {
+        if (_isTracking && latestPosition != null) {
+          try {
+            final teamLocations = await LocationService.getTeamLocations();
+            add(LocationPositionUpdated(latestPosition!));
+          } catch (e) {
+            print('Error en actualización periódica de tracking: $e');
+          }
+        }
+      });
+
+      // Iniciar tracking en segundo plano después de un pequeño delay
+      Future.delayed(Duration(seconds: 3), () async {
+        if (_isTracking) {
+          await LocationService.startBackgroundLocationTracking();
+        }
+      });
+    } catch (e) {
+      print('Error al iniciar tracking: $e');
+      _isTracking = false;
+      _dbSaveTimer?.cancel();
+      _trackingUpdateTimer?.cancel();
+      await _positionSubscription?.cancel();
+      _positionSubscription = null;
+      
+      emit(LocationError('Error al iniciar tracking: $e'));
+      
+      // Volver al tracking visual
+      final position = await LocationService.getCurrentLocation();
+      if (position != null) {
+        final teamLocations = await LocationService.getTeamLocations();
+        _startVisualTracking();
+        emit(LocationUpdated(position: position, teamLocations: teamLocations));
       }
-    });
-
-    // Iniciar tracking en segundo plano
-    await LocationService.startBackgroundLocationTracking();
+    }
   }
+
 
   Future<void> _onStopTracking(
     LocationStopTracking event,
     Emitter<LocationState> emit,
   ) async {
-    if (isClosed) return;
-
     try {
       LocationService.stopLocationTracking();
       _isTracking = false;
       _dbSaveTimer?.cancel();
+      _trackingUpdateTimer?.cancel();
       await _positionSubscription?.cancel();
       _positionSubscription = null;
       // Detener tracking en segundo plano
       await LocationService.stopBackgroundLocationTracking();
-
-      if (!isClosed) {
-        var position = await LocationService.getCurrentLocation();
-        if (position != null && !isClosed) {
-          var teamLocations = await LocationService.getTeamLocations();
-          emit(
-            LocationTrackingActive(
-              currentPosition: position,
-              teamLocations: teamLocations,
-            ),
-          );
+      
+      // Limpiar registros de BD del usuario
+      await LocationService.deactivateUserLocations();
+      
+      var position = await LocationService.getCurrentLocation();
+      if (position != null) {
+        var teamLocations = await LocationService.getTeamLocations();
+        
+        // Mantener el tracking visual
+        if (_visualTrackingSubscription == null) {
+          _startVisualTracking();
         }
+        
+        emit(
+          LocationUpdated(
+            position: position,
+            teamLocations: teamLocations,
+          ),
+        );
       }
 
-      //emit(LocationInitial());
     } catch (e) {
       emit(LocationError('Error al detener tracking: $e'));
     }
@@ -213,7 +331,8 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
   ) async {
     try {
       final permission = await Geolocator.checkPermission();
-      if (permission != LocationPermission.always) {
+      if (permission != LocationPermission.always)
+      {
         emit(LocationAlwaysPermission());
         return;
       }
@@ -221,6 +340,12 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
       final position = await LocationService.getCurrentLocation();
       if (position != null) {
         final teamLocations = await LocationService.getTeamLocations();
+        
+        // Si no está haciendo tracking con BD, asegurar que el visual esté activo
+        if (!_isTracking && _visualTrackingSubscription == null) {
+          _startVisualTracking();
+        }
+        
         emit(LocationUpdated(position: position, teamLocations: teamLocations));
       }
     } catch (e) {
@@ -259,11 +384,64 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
 
   bool get isTracking => _isTracking;
 
+  // Iniciar tracking visual sin guardar en BD
+  void _startVisualTracking() {
+    if (_isTracking) return; // No iniciar visual si ya está el tracking con BD
+    
+    _visualTrackingSubscription?.cancel();
+    _visualUpdateTimer?.cancel();
+    
+    Position? lastPosition;
+    
+    // Stream principal para tracking visual
+    _visualTrackingSubscription = LocationService.visualPositionStream.listen(
+      (position) {
+        lastPosition = position;
+        add(LocationVisualPositionUpdated(position));
+      },
+      onError: (error) {
+        print('Error en tracking visual (no crítico): $error');
+        // En caso de error, intentar de nuevo después de un delay
+        Future.delayed(Duration(seconds: 10), () {
+          if (!_isTracking && _visualTrackingSubscription == null) {
+            _startVisualTracking();
+          }
+        });
+      },
+    );
+    
+    // Timer adicional para asegurar actualizaciones periódicas
+    _visualUpdateTimer = Timer.periodic(Duration(seconds: 10), (_) async {
+      if (!_isTracking) {
+        try {
+          final position = await LocationService.getCurrentLocation();
+          if (position != null) {
+            lastPosition = position;
+            add(LocationVisualPositionUpdated(position));
+          }
+        } catch (e) {
+          print('Error en actualización periódica visual: $e');
+        }
+      }
+    });
+  }
+
+  // Detener tracking visual
+  void _stopVisualTracking() {
+    _visualTrackingSubscription?.cancel();
+    _visualTrackingSubscription = null;
+    _visualUpdateTimer?.cancel();
+    _visualUpdateTimer = null;
+  }
+
   @override
   Future<void> close() {
     if (_isTracking) {
       LocationService.stopLocationTracking();
     }
+    _dbSaveTimer?.cancel();
+    _trackingUpdateTimer?.cancel();
+    _stopVisualTracking();
     return super.close();
   }
 }
