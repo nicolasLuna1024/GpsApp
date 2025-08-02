@@ -6,8 +6,10 @@ import '../bloc/location_bloc.dart';
 import '../bloc/admin_bloc.dart';
 import '../bloc/terrain_bloc.dart';
 import '../bloc/team_bloc.dart';
+import '../bloc/collaborative_session_bloc.dart';
 import '../models/user_profile.dart';
 import '../utils/debug_service.dart';
+import '../widgets/collaborative_session_modal.dart';
 import 'login_screen.dart';
 import 'map_screen.dart';
 import 'admin_screen.dart';
@@ -219,18 +221,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildOptionCard(
                   context,
                   title: 'Mapa Tiempo Real',
-                  subtitle: 'Ver ubicación del equipo',
+                  subtitle: 'Individual o colaborativo',
                   icon: Icons.map,
                   color: Colors.green,
                   onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => BlocProvider(
-                          create: (context) => LocationBloc(),
-                          child: const MapScreen(),
-                        ),
-                      ),
-                    );
+                    _showMapOptionsModal(context);
                   },
                 ),
                 _buildOptionCard(
@@ -503,6 +498,164 @@ class _HomeScreenState extends State<HomeScreen> {
           Expanded(child: Text(value)),
         ],
       ),
+    );
+  }
+
+  void _showMapOptionsModal(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Container(
+            width: MediaQuery.of(context).size.width * 0.8,
+            constraints: const BoxConstraints(maxWidth: 400),
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Row(
+                  children: [
+                    Icon(Icons.map, color: Colors.green[600], size: 28),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Opciones de Mapa',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 24),
+
+                // Opción: Mapa Individual
+                _buildMapOption(
+                  context,
+                  title: 'Mapa Individual',
+                  subtitle: 'Ver tu ubicación y equipo',
+                  icon: Icons.person_pin_circle,
+                  color: Colors.green,
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => MultiBlocProvider(
+                          providers: [
+                            BlocProvider(create: (context) => LocationBloc()),
+                            BlocProvider<CollaborativeSessionBloc>.value(
+                              value: globalCollaborativeSessionBloc,
+                            ),
+                          ],
+                          child: const MapScreen(),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+
+                const SizedBox(height: 12),
+
+                // Opción: Sesión Colaborativa
+                _buildMapOption(
+                  context,
+                  title: 'Sesión Colaborativa',
+                  subtitle: 'Crear o unirse a sesión de equipo',
+                  icon: Icons.group_work,
+                  color: Colors.indigo,
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _showCollaborativeSessionModal(context);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMapOption(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey[300]!),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios, color: Colors.grey[400], size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCollaborativeSessionModal(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext dialogContext) {
+        return MultiBlocProvider(
+          providers: [
+            BlocProvider(create: (_) => TeamBloc()),
+            BlocProvider<CollaborativeSessionBloc>.value(
+              value: globalCollaborativeSessionBloc,
+            ),
+          ],
+          child: const CollaborativeSessionModal(isCompact: true),
+        );
+      },
     );
   }
 }

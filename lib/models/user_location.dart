@@ -7,6 +7,7 @@ class UserLocation {
   final double? accuracy;
   final double? heading;
   final double? speed;
+  final String? collaborativeSessionId; // Nuevo campo
   final DateTime timestamp;
   final bool isActive;
 
@@ -19,6 +20,7 @@ class UserLocation {
     this.accuracy,
     this.heading,
     this.speed,
+    this.collaborativeSessionId, // Nuevo campo
     required this.timestamp,
     this.isActive = true,
   });
@@ -39,6 +41,7 @@ class UserLocation {
           ? (json['heading'] as num).toDouble()
           : null,
       speed: json['speed'] != null ? (json['speed'] as num).toDouble() : null,
+      collaborativeSessionId: json['collaborative_session_id'] as String?,
       timestamp: DateTime.parse(json['timestamp'] as String),
       isActive: json['is_active'] as bool? ?? true,
     );
@@ -54,6 +57,7 @@ class UserLocation {
       'accuracy': accuracy,
       'heading': heading,
       'speed': speed,
+      'collaborative_session_id': collaborativeSessionId,
       'timestamp': timestamp.toIso8601String(),
       'is_active': isActive,
     };

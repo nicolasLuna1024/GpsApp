@@ -5,24 +5,24 @@ import 'package:latlong2/latlong.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:geolocator/geolocator.dart';
 import '../bloc/location_bloc.dart';
+import '../bloc/collaborative_session_bloc.dart';
 import '../models/user_location.dart';
+import '../models/collaborative_session.dart';
 import '../services/location_service.dart';
-
-
-
+import '../config/supabase_config.dart';
 
 const String isolateName = 'LocatorIsolate';
 
-
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+  final CollaborativeSession? collaborativeSession;
+
+  const MapScreen({super.key, this.collaborativeSession});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
 }
 
 class _MapScreenState extends State<MapScreen> {
-  
   final MapController _mapController = MapController();
 
   double _currentZoom = 15.0;
@@ -39,14 +39,20 @@ class _MapScreenState extends State<MapScreen> {
     _mapController.move(nuevaUbicacion, _currentZoom);
   }
 
-
   @override
   void initState() {
     super.initState();
     // Solicitar permisos y empezar tracking al cargar la pantalla
     context.read<LocationBloc>().add(LocationPermissionRequested());
-    
-    _mapController.mapEventStream.listen((event){
+
+    // 🆕 Establecer la sesión colaborativa activa en el LocationService
+    if (widget.collaborativeSession != null) {
+      LocationService.setActiveCollaborativeSession(
+        widget.collaborativeSession!.id,
+      );
+    }
+
+    _mapController.mapEventStream.listen((event) {
       setState(() {
         _currentZoom = event.camera.zoom;
       });
@@ -54,16 +60,77 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   @override
+  void dispose() {
+    // 🆕 Limpiar la sesión colaborativa si el usuario sale sin cerrarla formalmente
+    if (widget.collaborativeSession != null) {
+      LocationService.setActiveCollaborativeSession(null);
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final isCollaborative = widget.collaborativeSession != null;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Mapa en Tiempo Real',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Mapa en Tiempo Real',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                fontSize: 18,
+              ),
+            ),
+            if (isCollaborative) ...[
+              Text(
+                '🤝 Sesión: ${widget.collaborativeSession!.name}',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ],
+          ],
         ),
-        backgroundColor: Colors.green[600],
+        backgroundColor: isCollaborative
+            ? Colors.indigo[600]
+            : Colors.green[600],
         elevation: 0,
         actions: [
+          if (isCollaborative) ...[
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.group, color: Colors.white, size: 16),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${widget.collaborativeSession!.participantCount}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Botón para cerrar sesión (solo para el creador)
+            if (_isSessionCreator()) ...[
+              IconButton(
+                icon: const Icon(Icons.stop_circle, color: Colors.white),
+                onPressed: () => _showEndSessionDialog(),
+                tooltip: 'Finalizar sesión colaborativa',
+              ),
+            ],
+          ],
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: () {
@@ -77,95 +144,122 @@ class _MapScreenState extends State<MapScreen> {
           ),
         ],
       ),
-      body:
-       BlocListener<LocationBloc, LocationState>(
-        listener: (context, state) {
-          if (state is LocationPermissionDenied) {
-            Fluttertoast.showToast(
-              msg: state.message,
-              toastLength: Toast.LENGTH_LONG,
-              gravity: ToastGravity.BOTTOM,
-              backgroundColor: Colors.red,
-              textColor: Colors.white,
-            );
-            showDialog(
-              context: context,
-              builder: (_) => AlertDialog(
-                title: Text('Permiso requerido'),
-                content: Text(
-                    'Para que la app funcione en segundo plano, debes otorgar el permiso "Permitir todo el tiempo" en la configuración de la app.'),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
+      body: MultiBlocListener(
+        listeners: [
+          // Listener para LocationBloc
+          BlocListener<LocationBloc, LocationState>(
+            listener: (context, state) {
+              if (state is LocationPermissionDenied) {
+                Fluttertoast.showToast(
+                  msg: state.message,
+                  toastLength: Toast.LENGTH_LONG,
+                  gravity: ToastGravity.BOTTOM,
+                  backgroundColor: Colors.red,
+                  textColor: Colors.white,
+                );
+                showDialog(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: Text('Permiso requerido'),
+                    content: Text(
+                      'Para que la app funcione en segundo plano, debes otorgar el permiso "Permitir todo el tiempo" en la configuración de la app.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(context);
 
-                      if (Navigator.canPop(context)) {
-                        Navigator.pop(context);
-                      }
-                    },
-                    child: Text('Cancelar'),
+                          if (Navigator.canPop(context)) {
+                            Navigator.pop(context);
+                          }
+                        },
+                        child: Text('Cancelar'),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          await Geolocator.openAppSettings();
+                        },
+                        child: Text('Abrir configuración'),
+                      ),
+                    ],
                   ),
-                  TextButton(
-                    onPressed: () async {
-                      Navigator.pop(context);
-                      await Geolocator.openAppSettings();
-                    },
-                    child: Text('Abrir configuración'),
-                  ),
-                ],
-              ),
-            );
-          } else if (state is LocationError) {
-            Fluttertoast.showToast(
-              msg: state.message,
-              toastLength: Toast.LENGTH_LONG,
-              gravity: ToastGravity.BOTTOM,
-              backgroundColor: Colors.red,
-              textColor: Colors.white,
-            );
-          } else if (state is LocationTrackingActive && !_hasCenteredOnce) {
-            _initialMapCenter(state.currentPosition);
-            setState(() {
-              _hasCenteredOnce = true;
-            });
-          } else if (state is LocationUpdated) {
-            _updateMapCenter(state.position);
-          }
-          else if (state is LocationAlwaysPermission) {
-            showDialog(
-              context: context,
-              builder: (_) => AlertDialog(
-                title: Text('Permiso requerido'),
-                content: Text(
-                    'Para que la app funcione en segundo plano, debes otorgar el permiso "Permitir todo el tiempo" en la configuración de la app.'),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
+                );
+              } else if (state is LocationError) {
+                Fluttertoast.showToast(
+                  msg: state.message,
+                  toastLength: Toast.LENGTH_LONG,
+                  gravity: ToastGravity.BOTTOM,
+                  backgroundColor: Colors.red,
+                  textColor: Colors.white,
+                );
+              } else if (state is LocationTrackingActive && !_hasCenteredOnce) {
+                _initialMapCenter(state.currentPosition);
+                setState(() {
+                  _hasCenteredOnce = true;
+                });
+              } else if (state is LocationUpdated) {
+                _updateMapCenter(state.position);
+              } else if (state is LocationAlwaysPermission) {
+                showDialog(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: Text('Permiso requerido'),
+                    content: Text(
+                      'Para que la app funcione en segundo plano, debes otorgar el permiso "Permitir todo el tiempo" en la configuración de la app.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(context);
 
-                      if (Navigator.canPop(context)) {
-                        Navigator.pop(context);
-                      }
-                    },
-                    child: Text('Cancelar'),
+                          if (Navigator.canPop(context)) {
+                            Navigator.pop(context);
+                          }
+                        },
+                        child: Text('Cancelar'),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          await Geolocator.openAppSettings();
+                        },
+                        child: Text('Abrir configuración'),
+                      ),
+                    ],
                   ),
-                  TextButton(
-                    onPressed: () async {
-                      Navigator.pop(context);
-                      await Geolocator.openAppSettings();
-                    },
-                    child: Text('Abrir configuración'),
-                  ),
-                ],
-              ),
-            );
-          }
-        },
-
+                );
+              }
+            },
+          ),
+          // 🆕 Listener para CollaborativeSessionBloc
+          BlocListener<CollaborativeSessionBloc, CollaborativeSessionState>(
+            listener: (context, state) {
+              if (state is CollaborativeSessionOperationSuccess) {
+                Fluttertoast.showToast(
+                  msg: state.message,
+                  toastLength: Toast.LENGTH_LONG,
+                  backgroundColor: Colors.green,
+                  textColor: Colors.white,
+                );
+                // Si la operación fue exitosa y estamos cerrando una sesión, navegar hacia atrás
+                if (state.message.contains('finalizada') && mounted) {
+                  Navigator.of(context).pop();
+                }
+              } else if (state is CollaborativeSessionError) {
+                Fluttertoast.showToast(
+                  msg: state.message,
+                  toastLength: Toast.LENGTH_LONG,
+                  backgroundColor: Colors.red,
+                  textColor: Colors.white,
+                );
+              }
+            },
+          ),
+        ],
 
         child: BlocBuilder<LocationBloc, LocationState>(
-          builder:
-           (context, state) {
+          builder: (context, state) {
             if (state is LocationLoading) {
               return const Center(
                 child: Column(
@@ -521,5 +615,82 @@ class _MapScreenState extends State<MapScreen> {
 
   String _formatTime(DateTime dateTime) {
     return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+  }
+
+  // Verificar si el usuario actual es el creador de la sesión
+  bool _isSessionCreator() {
+    if (widget.collaborativeSession == null) return false;
+
+    final currentUserId = SupabaseConfig.client.auth.currentUser?.id;
+    return widget.collaborativeSession!.createdBy == currentUserId;
+  }
+
+  // Mostrar diálogo para confirmar el cierre de la sesión
+  void _showEndSessionDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Finalizar Sesión'),
+          ],
+        ),
+        content: const Text(
+          '¿Estás seguro de que quieres finalizar esta sesión colaborativa?\n\n'
+          'Todos los participantes serán desconectados.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _endCollaborativeSession();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Finalizar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Finalizar la sesión colaborativa
+  void _endCollaborativeSession() {
+    if (widget.collaborativeSession != null && mounted) {
+      try {
+        // Limpiar la sesión colaborativa activa del LocationService
+        LocationService.setActiveCollaborativeSession(null);
+
+        // Disparar evento para finalizar la sesión usando el BLoC
+        context.read<CollaborativeSessionBloc>().add(
+          CollaborativeSessionEndRequested(widget.collaborativeSession!.id),
+        );
+
+        Fluttertoast.showToast(
+          msg: 'Finalizando sesión colaborativa...',
+          toastLength: Toast.LENGTH_SHORT,
+          backgroundColor: Colors.orange,
+          textColor: Colors.white,
+        );
+
+        // NO navegar aquí - el listener se encargará cuando la operación sea exitosa
+      } catch (e) {
+        print('Error al finalizar sesión colaborativa: $e');
+        Fluttertoast.showToast(
+          msg: 'Error al finalizar la sesión',
+          toastLength: Toast.LENGTH_SHORT,
+          backgroundColor: Colors.red,
+          textColor: Colors.white,
+        );
+      }
+    }
   }
 }

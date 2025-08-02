@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'config/supabase_config.dart';
 import 'bloc/auth_bloc.dart';
+import 'bloc/collaborative_session_bloc.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 
@@ -11,6 +12,9 @@ void main() async {
   // Inicializar Supabase
   await SupabaseConfig.initialize();
 
+  // 🆕 Inicializar la instancia global del CollaborativeSessionBloc
+  initializeGlobalCollaborativeSessionBloc();
+
   runApp(const MyApp());
 }
 
@@ -19,8 +23,14 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (context) => AuthBloc()..add(AuthStarted()),
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider(create: (context) => AuthBloc()..add(AuthStarted())),
+        // 🆕 Usar la instancia global
+        BlocProvider<CollaborativeSessionBloc>.value(
+          value: globalCollaborativeSessionBloc,
+        ),
+      ],
       child: MaterialApp(
         title: 'TopoTracker',
         debugShowCheckedModeBanner: false,
