@@ -34,7 +34,7 @@
 
 ### Diagrama de Entidad-Relación
 
-![Diagrama de Entidad-Relación - TopoTracker](./docs/images/database-erd.png)
+![Diagrama de Entidad-Relación - TopoTracker](https://github.com/user-attachments/assets/320a713d-ec4e-4dc5-b768-786b6e7703d3)
 
 *Diagrama completo del esquema de base de datos mostrando las relaciones entre todas las tablas del sistema TopoTracker.*
 
