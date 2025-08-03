@@ -86,6 +86,10 @@ class _AdminScreenState extends State<AdminScreen>
               backgroundColor: Colors.green,
               textColor: Colors.white,
             );
+            context.read<AdminBloc>().add(AdminLoadTeams());
+            context.read<AdminBloc>().add(AdminLoadUsers());
+            context.read<AdminBloc>().add(AdminLoadStats());
+            context.read<AdminBloc>().add(AdminLoadActiveLocations());
           }
         },
         child: TabBarView(
@@ -598,13 +602,9 @@ class _AdminScreenState extends State<AdminScreen>
         break;
       case 'activate':
         context.read<AdminBloc>().add(AdminToggleTeamStatus(team['id'], true));
-        context.read<AdminBloc>().add(AdminLoadTeams());
-        context.read<AdminBloc>().add(AdminLoadUsers());
         break;
       case 'deactivate':
         context.read<AdminBloc>().add(AdminToggleTeamStatus(team['id'], false));
-        context.read<AdminBloc>().add(AdminLoadTeams());
-        context.read<AdminBloc>().add(AdminLoadUsers());
         break;
       case 'delete':
         _showDeleteTeamDialog(context, team);
@@ -1841,16 +1841,16 @@ class _AdminScreenState extends State<AdminScreen>
     );
   }
 
-void _refreshTeamsAndUsers(BuildContext context, String teamId) {
-  final adminBloc = context.read<AdminBloc>();
-  
-  adminBloc.add(AdminLoadTeamMembers(teamId));
-  adminBloc.add(AdminLoadAvailableUsers(teamId));
+  void _refreshTeamsAndUsers(BuildContext context, String teamId) {
+    final adminBloc = context.read<AdminBloc>();
 
-  Future.delayed(const Duration(milliseconds: 150), () {
-    adminBloc.add(AdminLoadTeams());
-  });
-}
+    adminBloc.add(AdminLoadTeamMembers(teamId));
+    adminBloc.add(AdminLoadAvailableUsers(teamId));
+
+    Future.delayed(const Duration(milliseconds: 150), () {
+      adminBloc.add(AdminLoadTeams());
+    });
+  }
 
   void _showManageTeamMembersDialog(
     BuildContext context,
@@ -1861,7 +1861,6 @@ void _refreshTeamsAndUsers(BuildContext context, String teamId) {
     // 🔹 Cargar datos al abrir el modal
     adminBloc.add(AdminLoadAvailableUsers(team['id']));
     adminBloc.add(AdminLoadTeamMembers(team['id']));
-
 
     showDialog(
       context: context,
@@ -1882,10 +1881,7 @@ void _refreshTeamsAndUsers(BuildContext context, String teamId) {
                   backgroundColor: Colors.green,
                 ),
               );
-              _refreshTeamsAndUsers(
-                context,
-                team['id'],
-              );
+              _refreshTeamsAndUsers(context, team['id']);
             }
           },
           child: BlocBuilder<AdminBloc, AdminState>(
