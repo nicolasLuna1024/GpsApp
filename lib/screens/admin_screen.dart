@@ -4,6 +4,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import '../bloc/admin_bloc.dart';
 import '../models/user_profile.dart';
 import '../models/user_location.dart';
+import '../widgets/team_members_dialog.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -501,7 +502,7 @@ class _AdminScreenState extends State<AdminScreen>
           children: [
             Text('Lat: ${location.latitude.toStringAsFixed(6)}'),
             Text('Lng: ${location.longitude.toStringAsFixed(6)}'),
-            Text('${_formatDateTime(location.timestamp)}'),
+            Text(_formatDateTime(location.timestamp)),
           ],
         ),
         trailing: Text(
@@ -1662,13 +1663,16 @@ class _AdminScreenState extends State<AdminScreen>
                                       ? null
                                       : descriptionController.text.trim();
 
-                                  if (newName != (team['name'] ?? ''))
+                                  if (newName != (team['name'] ?? '')) {
                                     hasChanges = true;
+                                  }
                                   if ((team['description'] ?? '') !=
-                                      (newDesc ?? ''))
+                                      (newDesc ?? '')) {
                                     hasChanges = true;
-                                  if (selectedLeaderId != team['leader_id'])
+                                  }
+                                  if (selectedLeaderId != team['leader_id']) {
                                     hasChanges = true;
+                                  }
 
                                   if (hasChanges) {
                                     setState(() => isSaving = true);
@@ -1837,15 +1841,27 @@ class _AdminScreenState extends State<AdminScreen>
     );
   }
 
+void _refreshTeamsAndUsers(BuildContext context, String teamId) {
+  final adminBloc = context.read<AdminBloc>();
+  
+  adminBloc.add(AdminLoadTeamMembers(teamId));
+  adminBloc.add(AdminLoadAvailableUsers(teamId));
+
+  Future.delayed(const Duration(milliseconds: 150), () {
+    adminBloc.add(AdminLoadTeams());
+  });
+}
+
   void _showManageTeamMembersDialog(
     BuildContext context,
     Map<String, dynamic> team,
   ) {
     final adminBloc = context.read<AdminBloc>();
 
-    // Cargar datos iniciales
+    // 🔹 Cargar datos al abrir el modal
     adminBloc.add(AdminLoadAvailableUsers(team['id']));
     adminBloc.add(AdminLoadTeamMembers(team['id']));
+
 
     showDialog(
       context: context,
@@ -1866,12 +1882,9 @@ class _AdminScreenState extends State<AdminScreen>
                   backgroundColor: Colors.green,
                 ),
               );
-            } else if (state is AdminError) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(state.message),
-                  backgroundColor: Colors.red,
-                ),
+              _refreshTeamsAndUsers(
+                context,
+                team['id'],
               );
             }
           },
@@ -1903,7 +1916,7 @@ class _AdminScreenState extends State<AdminScreen>
                   height: 400,
                   child: Column(
                     children: [
-                      // Información del equipo
+                      // 🔹 Información del equipo
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
@@ -1942,6 +1955,7 @@ class _AdminScreenState extends State<AdminScreen>
                       ),
                       const SizedBox(height: 16),
 
+                      // 🔹 Pestañas
                       Expanded(
                         child: DefaultTabController(
                           length: 2,
@@ -1958,7 +1972,7 @@ class _AdminScreenState extends State<AdminScreen>
                               Expanded(
                                 child: TabBarView(
                                   children: [
-                                    // TAB: Miembros Actuales
+                                    // 🔹 Miembros actuales
                                     teamMembers.isEmpty
                                         ? const Center(
                                             child: Text(
@@ -1997,34 +2011,25 @@ class _AdminScreenState extends State<AdminScreen>
                                                 subtitle: Text(
                                                   '${member.role} • ${member.email}',
                                                 ),
-                                                trailing: isProcessing
-                                                    ? const SizedBox(
-                                                        width: 20,
-                                                        height: 20,
-                                                        child:
-                                                            CircularProgressIndicator(
-                                                              strokeWidth: 2,
-                                                            ),
-                                                      )
-                                                    : IconButton(
-                                                        icon: const Icon(
-                                                          Icons.remove_circle,
-                                                          color: Colors.red,
-                                                        ),
-                                                        onPressed: () {
-                                                          adminBloc.add(
-                                                            AdminRemoveUserFromTeam(
-                                                              member.id,
-                                                              team['id'],
-                                                            ),
-                                                          );
-                                                        },
+                                                trailing: IconButton(
+                                                  icon: const Icon(
+                                                    Icons.remove_circle,
+                                                    color: Colors.red,
+                                                  ),
+                                                  onPressed: () {
+                                                    context.read<AdminBloc>().add(
+                                                      AdminRemoveUserFromTeam(
+                                                        member.id,
+                                                        team['id'],
                                                       ),
+                                                    );
+                                                  },
+                                                ),
                                               );
                                             },
                                           ),
 
-                                    // TAB: Agregar Miembros
+                                    // 🔹 Agregar miembros
                                     availableUsers.isEmpty
                                         ? const Center(
                                             child: Text(
@@ -2063,29 +2068,22 @@ class _AdminScreenState extends State<AdminScreen>
                                                 subtitle: Text(
                                                   '${user.role} • ${user.email}',
                                                 ),
-                                                trailing: isProcessing
-                                                    ? const SizedBox(
-                                                        width: 20,
-                                                        height: 20,
-                                                        child:
-                                                            CircularProgressIndicator(
-                                                              strokeWidth: 2,
-                                                            ),
-                                                      )
-                                                    : IconButton(
-                                                        icon: const Icon(
-                                                          Icons.add_circle,
-                                                          color: Colors.green,
-                                                        ),
-                                                        onPressed: () {
-                                                          adminBloc.add(
-                                                            AdminAddUserToTeam(
-                                                              user.id,
-                                                              team['id'],
-                                                            ),
-                                                          );
-                                                        },
-                                                      ),
+                                                trailing: IconButton(
+                                                  icon: const Icon(
+                                                    Icons.add_circle,
+                                                    color: Colors.green,
+                                                  ),
+                                                  onPressed: () {
+                                                    context
+                                                        .read<AdminBloc>()
+                                                        .add(
+                                                          AdminAddUserToTeam(
+                                                            user.id,
+                                                            team['id'],
+                                                          ),
+                                                        );
+                                                  },
+                                                ),
                                               );
                                             },
                                           ),

@@ -298,19 +298,27 @@ class AdminService {
     String? leaderId,
   }) async {
     try {
-      final response = await _client
+      // Lista inicial de miembros (incluye líder si existe)
+      List<String> initialMembers = [];
+      if (leaderId != null && leaderId.isNotEmpty) {
+        initialMembers.add(leaderId);
+      }
+
+      // Inserta equipo con leader y users_id inicial
+      final teamResponse = await _client
           .from('teams')
           .insert({
             'name': name,
-            'description': description,
+            'description': description ?? '',
             'leader_id': leaderId,
+            'users_id': initialMembers,
             'created_at': DateTime.now().toIso8601String(),
             'updated_at': DateTime.now().toIso8601String(),
-            'users_id': leaderId != null ? [leaderId] : [],
           })
           .select()
           .single();
 
+      print("✅ Equipo creado: $teamResponse");
       return true;
     } catch (e) {
       print('Error al crear equipo: $e');
@@ -370,24 +378,30 @@ class AdminService {
 
       updateData['updated_at'] = DateTime.now().toIso8601String();
 
-      // Añadir el leader id a users_id
-      if (leaderId != null) {
+      // 🔹 Actualizar datos principales del equipo
+      await _client.from('teams').update(updateData).eq('id', teamId);
+
+      // 🔹 Si hay nuevo líder, lo agregamos a users_id si no está ya
+      if (leaderId != null && leaderId.isNotEmpty) {
         final teamResponse = await _client
             .from('teams')
             .select('users_id')
             .eq('id', teamId)
             .single();
 
-        List<dynamic> users = teamResponse['users_id'] ?? [];
-        if (!users.contains(leaderId)) {
-          users.add(leaderId);
-          updateData['users_id'] = users;
+        List<dynamic> currentUsers = teamResponse['users_id'] ?? [];
+
+        if (!currentUsers.contains(leaderId)) {
+          currentUsers.add(leaderId);
+
+          await _client
+              .from('teams')
+              .update({'users_id': currentUsers})
+              .eq('id', teamId);
         }
       }
 
-      // Actualizar el equipo
-      await _client.from('teams').update(updateData).eq('id', teamId);
-
+      print("✅ Equipo actualizado correctamente");
       return true;
     } catch (e) {
       print('Error al actualizar equipo: $e');
@@ -398,27 +412,18 @@ class AdminService {
   // Eliminar equipo (soft delete)
   static Future<bool> deleteTeam(String teamId) async {
     try {
-      // Primero remover todos los usuarios del equipo de team
-      await _client
-          .from('teams')
-          .update({'users_id': []})
-          .eq('id', teamId);
-
-      // Remover el leader id 
-      await _client
-          .from('teams')
-          .update({'leader_id': null})
-          .eq('id', teamId);
-
-      // Luego marcar el equipo como inactivo
+      // 🔹 Limpiar leader_id y users_id, marcar inactivo
       await _client
           .from('teams')
           .update({
+            'leader_id': null,
+            'users_id': [], // Vacía el arreglo
             'is_active': false,
             'updated_at': DateTime.now().toIso8601String(),
           })
           .eq('id', teamId);
 
+      print("✅ Equipo eliminado (marcado como inactivo)");
       return true;
     } catch (e) {
       print('Error al eliminar equipo: $e');
@@ -426,30 +431,27 @@ class AdminService {
     }
   }
 
-  // Agregar usuario a un equipo (añadir al arreglo users_id[])
+  // Agregar usuario al equipo
   static Future<bool> addUserToTeam(String userId, String teamId) async {
     try {
-      // Obtener arreglo actual
-      final response = await _client
+      // 1️⃣ Obtener array actual
+      final teamResponse = await _client
           .from('teams')
           .select('users_id')
           .eq('id', teamId)
           .single();
 
-      List<dynamic> users = response['users_id'] ?? [];
+      List<dynamic> currentUsers = teamResponse['users_id'] ?? [];
 
-      // Evitar duplicados
-      if (!users.contains(userId)) {
-        users.add(userId);
+      // 2️⃣ Agregar solo si no existe
+      if (!currentUsers.contains(userId)) {
+        currentUsers.add(userId);
       }
 
-      // Actualizar arreglo
+      // 3️⃣ Actualizar
       await _client
           .from('teams')
-          .update({
-            'users_id': users,
-            'updated_at': DateTime.now().toIso8601String(),
-          })
+          .update({'users_id': currentUsers})
           .eq('id', teamId);
 
       return true;
@@ -459,35 +461,28 @@ class AdminService {
     }
   }
 
-  // Remover usuario de un equipo (eliminar del arreglo users_id[])
+  // Remover usuario del equipo
   static Future<bool> removeUserFromTeam(String userId, String teamId) async {
     try {
-      // Obtener arreglo actual
-      final response = await _client
+      final teamResponse = await _client
           .from('teams')
           .select('users_id')
           .eq('id', teamId)
           .single();
 
-      List<dynamic> users = response['users_id'] ?? [];
+      // Asegurar que todos sean String para la comparación
+      List<String> currentUsers =
+          (teamResponse['users_id'] as List<dynamic>? ?? [])
+              .map((id) => id.toString())
+              .toList();
 
-      // Remover usuario si está en el arreglo
-      users.removeWhere((id) => id == userId);
+      // Remover usuario
+      currentUsers.remove(userId.toString());
 
-      // Si el usuario es el líder, removerlo también
+      // Actualizar la lista en Supabase
       await _client
           .from('teams')
-          .update({'leader_id': null})
-          .eq('id', teamId)
-          .eq('leader_id', userId);
-
-      // Actualizar arreglo
-      await _client
-          .from('teams')
-          .update({
-            'users_id': users,
-            'updated_at': DateTime.now().toIso8601String(),
-          })
+          .update({'users_id': currentUsers})
           .eq('id', teamId);
 
       return true;
@@ -498,70 +493,62 @@ class AdminService {
   }
 
   // Obtener usuarios disponibles
-  static Future<List<UserProfile>> getAvailableUsers(String teamId) async {
+  static Future<List<UserProfile>> getTeamMembers(String teamId) async {
     try {
-      // Obtener los IDs de usuarios ya asignados a este equipo
       final teamResponse = await _client
           .from('teams')
           .select('users_id')
           .eq('id', teamId)
           .single();
 
-      final assignedUserIds = <String>{};
-      final List<dynamic>? ids = teamResponse['users_id'];
-      if (ids != null) {
-        assignedUserIds.addAll(ids.cast<String>());
-      }
+      final userIds = (teamResponse['users_id'] as List<dynamic>? ?? []);
 
-      // Obtener todos los usuarios activos
-      final allUsersResponse = await _client
+      if (userIds.isEmpty) return [];
+
+      final allUsers = await _client
+          .from('user_profiles')
+          .select('*')
+          .order('full_name', ascending: true);
+
+      final teamMembers = allUsers
+          .where((u) => userIds.contains(u['id']))
+          .map<UserProfile>((json) => UserProfile.fromJson(json))
+          .toList();
+
+      return teamMembers;
+    } catch (e) {
+      print('Error al obtener miembros del equipo: $e');
+      return [];
+    }
+  }
+
+  static Future<List<UserProfile>> getAvailableUsers(String teamId) async {
+    try {
+      // Traemos el array de usuarios ya en el equipo
+      final teamResponse = await _client
+          .from('teams')
+          .select('users_id')
+          .eq('id', teamId)
+          .single();
+
+      final userIds = (teamResponse['users_id'] as List<dynamic>? ?? []);
+
+      // Traemos todos los activos
+      final allActiveUsers = await _client
           .from('user_profiles')
           .select('*')
           .eq('is_active', true)
           .order('full_name', ascending: true);
 
-      // Filtrar los que no estén en este equipo
-      final availableUsers = allUsersResponse
-          .where((u) => !assignedUserIds.contains(u['id']))
+      // Filtramos en memoria: quitamos los que ya están en users_id
+      final availableUsers = allActiveUsers
+          .where((u) => !userIds.contains(u['id']))
           .map<UserProfile>((json) => UserProfile.fromJson(json))
           .toList();
 
       return availableUsers;
     } catch (e) {
-      print('Error al obtener usuarios disponibles para equipo $teamId: $e');
-      return [];
-    }
-  }
-
-  // Obtener miembros de un equipo específico
-  static Future<List<UserProfile>> getTeamMembers(String teamId) async {
-    try {
-      // Obtener arreglo de IDs de usuarios del equipo
-      final teamResponse = await _client
-          .from('teams')
-          .select('users_id')
-          .eq('id', teamId)
-          .single();
-
-      final List<dynamic> usersIds = teamResponse['users_id'] ?? [];
-
-      if (usersIds.isEmpty) {
-        return [];
-      }
-
-      // Obtener perfiles de los usuarios en el arreglo
-      final membersResponse = await _client
-          .from('user_profiles')
-          .select('*')
-          .inFilter('id', usersIds)
-          .eq('is_active', true)
-          .order('full_name', ascending: true);
-
-      return membersResponse
-          .map<UserProfile>((json) => UserProfile.fromJson(json))
-          .toList();
-    } catch (e) {
-      print('Error al obtener miembros del equipo: $e');
+      print('Error al obtener usuarios disponibles: $e');
       return [];
     }
   }

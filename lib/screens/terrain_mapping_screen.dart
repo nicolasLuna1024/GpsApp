@@ -515,7 +515,7 @@ class _TerrainMappingScreenState extends State<TerrainMappingScreen> {
                   ),
                 ),
               );
-            }).toList(),
+            }),
           ],
         ),
       ],

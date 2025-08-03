@@ -107,7 +107,6 @@ class AdminRemoveUserFromTeam extends AdminEvent {
 
 class AdminLoadAvailableUsers extends AdminEvent {
   final String teamId;
-
   AdminLoadAvailableUsers(this.teamId);
 }
 
@@ -260,18 +259,17 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
     Emitter<AdminState> emit,
   ) async {
     try {
-      final isAdmin = await AdminService.isCurrentUserAdmin();
-      if (!isAdmin) {
-        emit(AdminAccessDenied());
-        return;
-      }
-
       final teams = await AdminService.getTeams();
+
       final currentState = state is AdminLoaded
-          ? state as AdminLoaded
+          ? (state as AdminLoaded)
           : AdminLoaded();
 
-      emit(currentState.copyWith(teams: teams));
+      emit(
+        currentState.copyWith(
+          teams: List.from(teams),
+        ),
+      );
     } catch (e) {
       emit(AdminError('Error al cargar equipos: $e'));
     }
@@ -578,16 +576,21 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
     Emitter<AdminState> emit,
   ) async {
     try {
-      emit(AdminLoading());
+      final isAdmin = await AdminService.isCurrentUserAdmin();
+      if (!isAdmin) {
+        emit(AdminAccessDenied());
+        return;
+      }
+
       final success = await AdminService.removeUserFromTeam(
         event.userId,
         event.teamId,
       );
 
       if (success) {
-        emit(AdminSuccess('Usuario removido del equipo correctamente.'));
+        emit(AdminSuccess('Usuario removido del equipo exitosamente'));
       } else {
-        emit(AdminError('No se pudo remover el usuario.'));
+        emit(AdminError('Error al remover usuario del equipo'));
       }
     } catch (e) {
       emit(AdminError('Error al remover usuario: $e'));
@@ -606,7 +609,6 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
       }
 
       final availableUsers = await AdminService.getAvailableUsers(event.teamId);
-
       final currentState = state is AdminLoaded
           ? state as AdminLoaded
           : AdminLoaded();
