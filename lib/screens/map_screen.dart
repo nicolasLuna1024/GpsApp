@@ -72,6 +72,11 @@ class _MapScreenState extends State<MapScreen> {
     // Solicitar permisos y empezar tracking al cargar la pantalla
     context.read<LocationBloc>().add(LocationPermissionRequested());
     
+    // 🆕 Cargar ubicaciones del equipo o sesión colaborativa
+    Future.delayed(Duration(milliseconds: 500), () {
+      _loadTeamOrSessionLocations();
+    });
+    
     _mapController.mapEventStream.listen((event){
       setState(() {
         _currentZoom = event.camera.zoom;
@@ -84,6 +89,7 @@ class _MapScreenState extends State<MapScreen> {
     _terrainNameController.dispose();
     _terrainDescriptionController.dispose();
     _stopIconUpdateTimer();
+    _stopDatabaseSaveTimer(); // 🆕 Limpiar timer de BD
 
     // Desactivar todas las ubicaciones activas del usuario al salir
     LocationService.deactivateUserLocations();
@@ -109,7 +115,7 @@ class _MapScreenState extends State<MapScreen> {
               onPressed: () {
                 Navigator.of(context).pop(true);
                 // Detener tracking
-                context.read<LocationBloc>().add(LocationStopTracking());
+                _stopTracking();
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red[600],
@@ -142,7 +148,7 @@ class _MapScreenState extends State<MapScreen> {
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: () {
               context.read<LocationBloc>().add(LocationUpdateRequested());
-              context.read<LocationBloc>().add(LocationTeamMembersRequested());
+              _loadTeamOrSessionLocations();
             },
           ),
           IconButton(
@@ -229,6 +235,10 @@ class _MapScreenState extends State<MapScreen> {
             // Iniciar timer para actualizaciones periódicas del ícono si no existe
             if (_iconUpdateTimer == null) {
               _startIconUpdateTimer();
+            }
+            // 🆕 Iniciar timer para guardar en BD cuando el tracking está activo
+            if (_databaseSaveTimer == null) {
+              _startDatabaseSaveTimer();
             }
           }
           else if (state is LocationAlwaysPermission) {
@@ -642,7 +652,7 @@ class _MapScreenState extends State<MapScreen> {
             heroTag: "tracking",
             onPressed: () {
               if (context.read<LocationBloc>().isTracking) {
-                context.read<LocationBloc>().add(LocationStopTracking());
+                _stopTracking();
               } else {
                 context.read<LocationBloc>().add(LocationStartTracking());
               }
@@ -970,9 +980,9 @@ class _MapScreenState extends State<MapScreen> {
     return '${dateTime.day}/${dateTime.month} ${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
   }
 
-  DateTime? _lastMapUpdate;
   LatLng? _lastValidPosition;
   Timer? _iconUpdateTimer;
+  Timer? _databaseSaveTimer; // 🆕 Timer para guardar en BD
   
   // Actualizar solo el ícono sin mover la cámara (para tracking visual)
   void _updateIconOnly(Position position) {
@@ -1091,8 +1101,56 @@ class _MapScreenState extends State<MapScreen> {
     _iconUpdateTimer = null;
   }
 
+  // 🆕 Iniciar timer para guardar ubicaciones en BD (sesiones colaborativas)
+  void _startDatabaseSaveTimer() {
+    _stopDatabaseSaveTimer();
+    _databaseSaveTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+      if (context.read<LocationBloc>().isTracking) {
+        try {
+          final position = await LocationService.getCurrentLocation();
+          if (position != null) {
+            await LocationService.saveLocationToDatabase(position);
+            print('📍 Ubicación enviada a BD: ${position.latitude}, ${position.longitude}');
+          }
+        } catch (e) {
+          print('Error en guardado automático en BD: $e');
+        }
+      }
+    });
+  }
+
+  // 🆕 Detener timer de guardado en BD
+  void _stopDatabaseSaveTimer() {
+    _databaseSaveTimer?.cancel();
+    _databaseSaveTimer = null;
+  }
+
+  // 🆕 Método completo para detener tracking y limpiar timers
+  void _stopTracking() {
+    context.read<LocationBloc>().add(LocationStopTracking());
+    _stopDatabaseSaveTimer();
+    print('🔴 Tracking detenido y timers limpiados');
+  }
+
   void _centerOnCurrentLocation() {
     _mapController.moveAndRotate(_currentCenter, 15.0, 0);
+  }
+
+  // 🆕 Método para cargar ubicaciones según el contexto (equipo o sesión colaborativa)
+  void _loadTeamOrSessionLocations() {
+    final activeSessionId = LocationService.getActiveCollaborativeSession();
+    
+    if (activeSessionId != null) {
+      // Si hay una sesión colaborativa activa, cargar participantes de la sesión
+      context.read<LocationBloc>().add(
+        LocationCollaborativeSessionMembersRequested(activeSessionId),
+      );
+      print('🗺️ Cargando ubicaciones de sesión colaborativa: $activeSessionId');
+    } else {
+      // Si no hay sesión colaborativa, cargar miembros del equipo
+      context.read<LocationBloc>().add(LocationTeamMembersRequested());
+      print('🗺️ Cargando ubicaciones del equipo');
+    }
   }
 
   void _showMemberInfo(BuildContext context, UserLocation location) {

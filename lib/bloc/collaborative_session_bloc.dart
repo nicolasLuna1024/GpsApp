@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../models/collaborative_session.dart';
 import '../services/collaborative_session_service.dart';
+import '../services/location_service.dart';
 
 // Eventos del BLoC de Sesiones Colaborativas
 abstract class CollaborativeSessionEvent {}
@@ -148,6 +149,8 @@ class CollaborativeSessionBloc
         );
 
         if (activeSession != null) {
+          // 🆕 Configurar sesión activa en LocationService al crear
+          LocationService.setActiveCollaborativeSession(activeSession.id);
           emit(CollaborativeSessionJoined(activeSession));
         }
       }
@@ -183,6 +186,8 @@ class CollaborativeSessionBloc
         );
 
         if (activeSession != null) {
+          // 🆕 Configurar sesión activa en LocationService al unirse
+          LocationService.setActiveCollaborativeSession(activeSession.id);
           emit(CollaborativeSessionJoined(activeSession));
         }
       } else if (!isClosed) {
@@ -214,6 +219,13 @@ class CollaborativeSessionBloc
       print('✅ Sesión finalizada exitosamente en el servidor');
 
       if (!isClosed) {
+        // 🆕 Limpiar sesión activa si es la que se está finalizando
+        final currentActiveSession = LocationService.getActiveCollaborativeSession();
+        if (currentActiveSession == event.sessionId) {
+          LocationService.setActiveCollaborativeSession(null);
+          print('🎯 Sesión activa limpiada: ${event.sessionId}');
+        }
+        
         // Recargar las sesiones
         final sessions = await _sessionService.getUserTeamSessions();
 

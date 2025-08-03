@@ -5,8 +5,8 @@ import '../bloc/collaborative_session_bloc.dart';
 import '../bloc/team_bloc.dart';
 import '../models/collaborative_session.dart';
 import '../screens/map_screen.dart';
-import '../bloc/location_bloc.dart';
 import '../config/supabase_config.dart';
+import '../services/location_service.dart';
 
 class CollaborativeSessionModal extends StatefulWidget {
   final bool isCompact; // Nueva propiedad para mostrar versión compacta
@@ -474,6 +474,14 @@ class _CollaborativeSessionModalState extends State<CollaborativeSessionModal> {
           ElevatedButton(
             onPressed: () {
               Navigator.of(context).pop();
+              
+              // 🆕 Limpiar sesión activa si es la misma que se está finalizando
+              final activeSessionId = LocationService.getActiveCollaborativeSession();
+              if (activeSessionId == sessionId) {
+                LocationService.setActiveCollaborativeSession(null);
+                print('🎯 Sesión colaborativa limpiada: $sessionId');
+              }
+              
               context.read<CollaborativeSessionBloc>().add(
                 CollaborativeSessionEndRequested(sessionId),
               );
@@ -492,17 +500,21 @@ class _CollaborativeSessionModalState extends State<CollaborativeSessionModal> {
   void _joinMapSession(CollaborativeSession session) {
     Navigator.of(context).pop(); // Cerrar el modal
 
+    // 🆕 Configurar la sesión activa en LocationService
+    LocationService.setActiveCollaborativeSession(session.id);
+    print('🎯 Sesión colaborativa configurada: ${session.id}');
+
     // Navegar al mapa con la sesión colaborativa
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => MultiBlocProvider(
           providers: [
-            BlocProvider(create: (context) => LocationBloc()),
+            // LocationBloc ya está disponible globalmente
             BlocProvider<CollaborativeSessionBloc>.value(
               value: globalCollaborativeSessionBloc,
             ),
           ],
-          child: MapScreen(collaborativeSession: session),
+          child: MapScreen(),
         ),
       ),
     );
