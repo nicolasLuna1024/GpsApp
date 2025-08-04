@@ -9,8 +9,6 @@ CREATE TABLE public.user_profiles (
     email TEXT NOT NULL,
     full_name TEXT,
     role TEXT DEFAULT 'topografo' CHECK (role IN ('admin', 'topografo')),
-    --Ha eliminar
-    team_id UUID,
     is_active BOOLEAN DEFAULT true,
     avatar_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -58,10 +56,11 @@ CREATE TABLE public.terrains (
     is_active BOOLEAN DEFAULT true
 );
 
+/*
 -- 4. Agregar foreign key para team_id en user_profiles
 ALTER TABLE public.user_profiles 
 ADD CONSTRAINT fk_user_profiles_team 
-FOREIGN KEY (team_id) REFERENCES public.teams(id);
+FOREIGN KEY (team_id) REFERENCES public.teams(id);*/
 
 -- 5. Agregar foreign key para team_id en terrains
 ALTER TABLE public.terrains 
@@ -78,6 +77,8 @@ ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_locations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.terrains ENABLE ROW LEVEL SECURITY;
 
+
+-- POLÍTICAS PARA EQUIPOS Y PERFILES ..............................................................................
 -- Políticas para user_profiles
 CREATE POLICY "Los usuarios pueden ver su propio perfil" 
 ON public.user_profiles FOR SELECT 
@@ -105,6 +106,12 @@ USING (
         WHERE id = auth.uid()
     )
 );
+-- ...............................................................................................................
+
+
+
+
+
 
 -- Políticas para user_locations
 CREATE POLICY "Los usuarios pueden insertar su propia ubicación" 

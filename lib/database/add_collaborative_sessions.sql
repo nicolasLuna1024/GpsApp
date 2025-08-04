@@ -25,11 +25,11 @@ REFERENCES public.collaborative_sessions(id);
 ALTER TABLE public.collaborative_sessions ENABLE ROW LEVEL SECURITY;
 
 -- Políticas para collaborative_sessions
-CREATE POLICY "Users can create sessions for their teams" 
+CREATE POLICY "Ususarios pueden crear sesiones para sus equipos" 
 ON public.collaborative_sessions FOR INSERT 
 WITH CHECK (auth.uid() = created_by);
 
-CREATE POLICY "Team members can view team sessions" 
+CREATE POLICY "Miembros de equipos pueden ver sesiones de equipo" 
 ON public.collaborative_sessions FOR SELECT 
 USING (
     auth.uid() IN (
@@ -39,7 +39,7 @@ USING (
     )
 );
 
-CREATE POLICY "Session creator can update session" 
+CREATE POLICY "Creador de sesión puede actualizarlas" 
 ON public.collaborative_sessions FOR UPDATE 
 USING (auth.uid() = created_by);
 
@@ -238,3 +238,16 @@ GRANT EXECUTE ON FUNCTION public.create_collaborative_session(TEXT, TEXT, UUID) 
 GRANT EXECUTE ON FUNCTION public.join_collaborative_session(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_user_team_sessions() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.end_collaborative_session(UUID) TO authenticated;
+
+
+
+
+
+
+
+/*
+PRUEBAS
+*/
+
+
+ALTER TABLE public.collaborative_sessions DISABLE ROW LEVEL SECURITY;
