@@ -49,7 +49,7 @@ CREATE TABLE public.terrains (
     description TEXT,
     points JSONB NOT NULL, -- Array de puntos {latitude, longitude, altitude, timestamp}
     area DECIMAL(15, 6) NOT NULL, -- Área en metros cuadrados
-    user_id UUID REFERENCES public.user_profiles(id) NOT NULL,
+    user_id UUID REFERENCES public.user_profiles(id),
     team_id UUID REFERENCES public.teams(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -78,8 +78,8 @@ ALTER TABLE public.user_locations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.terrains ENABLE ROW LEVEL SECURITY;
 
 
--- POLÍTICAS PARA EQUIPOS Y PERFILES ..............................................................................
--- Políticas para user_profiles
+-- ...................................................................................................................................
+-- Políticas de perfiles y equipos
 CREATE POLICY "Los usuarios pueden ver su propio perfil" 
 ON public.user_profiles FOR SELECT 
 USING (auth.uid() = id);
@@ -88,45 +88,48 @@ CREATE POLICY "Los usuarios pueden actualizar su propio perfil"
 ON public.user_profiles FOR UPDATE 
 USING (auth.uid() = id);
 
+
 CREATE POLICY "Los usuarios pueden ver perfiles del mismo equipo" 
 ON public.user_profiles FOR SELECT 
 USING (
-    team_id IN (
-        SELECT team_id FROM public.user_profiles 
-        WHERE id = auth.uid()
+    EXISTS (
+        SELECT 1
+        FROM public.teams
+        WHERE
+            users_id @> ARRAY[auth.uid()]
+            AND users_id @> ARRAY[id]
     )
 );
 
--- Políticas para teams
 CREATE POLICY "Los miembros pueden ver su equipo" 
 ON public.teams FOR SELECT 
 USING (
-    id IN (
-        SELECT team_id FROM public.user_profiles 
-        WHERE id = auth.uid()
-    )
+    users_id @> ARRAY[auth.uid()]
 );
--- ...............................................................................................................
 
-
-
-
-
-
+-- ...................................................................................................................................
+/*
+*
+*
+*
+*
+*/
+-- ...................................................................................................................................
 -- Políticas para user_locations
 CREATE POLICY "Los usuarios pueden insertar su propia ubicación" 
 ON public.user_locations FOR INSERT 
 WITH CHECK (auth.uid() = user_id);
 
+
 CREATE POLICY "Los usuarios pueden ver ubicaciones del mismo equipo" 
 ON public.user_locations FOR SELECT 
 USING (
-    user_id IN (
-        SELECT id FROM public.user_profiles 
-        WHERE team_id = (
-            SELECT team_id FROM public.user_profiles 
-            WHERE id = auth.uid()
-        )
+    EXISTS (
+        SELECT 1
+        FROM public.teams
+        WHERE 
+            users_id @> ARRAY[auth.uid()]
+            AND users_id @> ARRAY[user_id]
     )
 );
 
@@ -141,34 +144,58 @@ CREATE POLICY "Los usuarios pueden ver su propia ubicación"
 ON public.user_locations
 FOR SELECT
 USING (auth.uid() = user_id);
-
-
-
+-- ...................................................................................................................................
+/*
+*
+*
+*
+*
+*/
+-- ...................................................................................................................................
 -- Políticas para terrains
-CREATE POLICY "Los usuarios pueden crear sus propios terrenos" 
+CREATE POLICY "Los usuarios pueden crear sus propios terrenos o terrenos sin dueño" 
 ON public.terrains FOR INSERT 
-WITH CHECK (auth.uid() = user_id);
+WITH CHECK (
+    user_id IS NULL OR user_id = auth.uid()
+);
 
 CREATE POLICY "Los usuarios pueden ver sus propios terrenos" 
 ON public.terrains FOR SELECT 
 USING (auth.uid() = user_id);
 
-CREATE POLICY "Los usuarios pueden ver terrenos del mismo equipo" 
-ON public.terrains FOR SELECT 
+CREATE POLICY "Los usuarios pueden ver terrenos del mismo equipo"
+ON public.terrains FOR SELECT
 USING (
-    team_id IN (
-        SELECT team_id FROM public.user_profiles 
-        WHERE id = auth.uid()
+    EXISTS (
+        SELECT 1 FROM public.teams
+        WHERE id = terrains.team_id
+        AND users_id @> ARRAY[auth.uid()]
     )
 );
+
 
 CREATE POLICY "Los usuarios pueden actualizar sus propios terrenos" 
 ON public.terrains FOR UPDATE 
 USING (auth.uid() = user_id);
 
--- ===========================================
+CREATE POLICY "Miembros pueden actualizar terrenos del equipo"
+ON public.terrains FOR UPDATE
+USING (
+    EXISTS (
+        SELECT 1 FROM public.teams
+        WHERE id = terrains.team_id
+        AND users_id @> ARRAY[auth.uid()]
+    )
+);
+-- ...................................................................................................................................
+/*
+*
+*
+*
+*
+*/
+-- ...................................................................................................................................
 -- FUNCIONES Y TRIGGERS
--- ===========================================
 
 -- Función para crear perfil automáticamente al registrarse
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -206,10 +233,15 @@ CREATE TRIGGER update_teams_updated_at
 CREATE TRIGGER update_terrains_updated_at 
     BEFORE UPDATE ON public.terrains 
     FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-
--- ===========================================
+-- ...................................................................................................................................
+/*
+*
+*
+*
+*
+*/
+-- ...................................................................................................................................
 -- POLÍTICAS ADICIONALES DE SEGURIDAD
--- ===========================================
 
 -- Política adicional: Solo usuarios activos pueden acceder a sus datos
 CREATE POLICY "Solo usuarios activos pueden acceder a user_profiles" 
@@ -230,26 +262,53 @@ WITH CHECK (
 );
 
 -- Política adicional: Solo usuarios activos pueden crear terrenos
-CREATE POLICY "Solo usuarios activos pueden crear terrenos" 
-ON public.terrains FOR INSERT 
+CREATE POLICY "Solo usuarios activos pueden crear terrenos o sin dueño"
+ON public.terrains FOR INSERT
 WITH CHECK (
-    auth.uid() = user_id AND 
-    EXISTS (
-        SELECT 1 FROM public.user_profiles 
-        WHERE id = auth.uid() AND is_active = true
-    )
+    (user_id IS NULL) OR
+    (user_id = auth.uid() AND EXISTS (
+        SELECT 1 FROM public.user_profiles WHERE id = auth.uid() AND is_active = true
+    ))
+);
+-- ...................................................................................................................................
+/*
+*
+*
+*
+*
+*/
+-- ...................................................................................................................................
+-- Políticas para administradores
+CREATE POLICY "Cualquier usuario puede ver perfiles"
+ON public.user_profiles
+FOR SELECT
+TO public
+USING (auth.role() = 'authenticated');
+
+
+
+CREATE POLICY "Cualquier usuario puede ver equipos"
+ON public.teams
+FOR SELECT
+TO public
+USING (auth.role() = 'authenticated');
+
+
+
+
+CREATE POLICY "Cualquier usuario puede crear equipos"
+ON public.teams
+FOR INSERT
+TO public
+WITH CHECK (
+  auth.role() = 'authenticated'
 );
 
--- ===========================================
--- DATOS DE PRUEBA (OPCIONAL)
--- ===========================================
 
--- Crear un equipo de ejemplo
-INSERT INTO public.teams (name, description, users_id) 
-VALUES ('Equipo Topografía Norte', 'Equipo encargado de la zona norte de la ciudad', 
-        array['2510c2d1-8fa5-4d73-8ce8-028f226151f1', '2510c2d1-8fa5-4d73-8ce8-028f226151f1', 
-        '2510c2d1-8fa5-4d73-8ce8-028f226151f1', '2510c2d1-8fa5-4d73-8ce8-028f226151f1']::uuid[]);
-        
-
--- NOTA: Los usuarios se crearán automáticamente cuando se registren
--- a través de la aplicación Flutter
+CREATE POLICY "Cualquier usuario puede crear perfiles de otros"
+ON public.user_profiles
+FOR INSERT
+TO public
+WITH CHECK (
+  auth.role() = 'authenticated'
+);

@@ -125,12 +125,12 @@ class _CollaborativeSessionModalState extends State<CollaborativeSessionModal> {
             textColor: Colors.white,
           );
 
-          // 🆕 Si tiene una sesión activa, mostrar diálogo para unirse automáticamente
+          // Si tiene una sesión activa, mostrar diálogo para unirse automáticamente
           if (state.activeSession != null) {
             _showJoinSessionDialog(state.activeSession!);
           }
         } else if (state is CollaborativeSessionJoined) {
-          // 🆕 Cuando se une a una sesión, navegar directamente al mapa
+          // Cuando se une a una sesión, navegar directamente al mapa
           _joinMapSession(state.session);
         }
       },
@@ -439,7 +439,7 @@ class _CollaborativeSessionModalState extends State<CollaborativeSessionModal> {
       ),
     );
 
-    // 🆕 No limpiar el formulario aquí - se limpiará después del éxito
+    // No limpiar el formulario aquí - se limpiará después del éxito
     // El formulario se mantendrá hasta que se confirme la creación exitosa
   }
 
@@ -475,11 +475,11 @@ class _CollaborativeSessionModalState extends State<CollaborativeSessionModal> {
             onPressed: () {
               Navigator.of(context).pop();
               
-              // 🆕 Limpiar sesión activa si es la misma que se está finalizando
+              // Limpiar sesión activa si es la misma que se está finalizando
               final activeSessionId = LocationService.getActiveCollaborativeSession();
               if (activeSessionId == sessionId) {
                 LocationService.setActiveCollaborativeSession(null);
-                print('🎯 Sesión colaborativa limpiada: $sessionId');
+                print('Sesión colaborativa limpiada: $sessionId');
               }
               
               context.read<CollaborativeSessionBloc>().add(
@@ -500,9 +500,9 @@ class _CollaborativeSessionModalState extends State<CollaborativeSessionModal> {
   void _joinMapSession(CollaborativeSession session) {
     Navigator.of(context).pop(); // Cerrar el modal
 
-    // 🆕 Configurar la sesión activa en LocationService
+    // Configurar la sesión activa en LocationService
     LocationService.setActiveCollaborativeSession(session.id);
-    print('🎯 Sesión colaborativa configurada: ${session.id}');
+    print('Sesión colaborativa configurada: ${session.id}');
 
     // Navegar al mapa con la sesión colaborativa
     Navigator.of(context).push(
@@ -559,7 +559,7 @@ class _CollaborativeSessionModalState extends State<CollaborativeSessionModal> {
     );
   }
 
-  // 🆕 Método para mostrar diálogo de confirmación después de crear sesión
+  // Método para mostrar diálogo de confirmación después de crear sesión
   void _showJoinSessionDialog(CollaborativeSession session) {
     showDialog(
       context: context,

@@ -16,7 +16,7 @@ class LocationUpdateRequested extends LocationEvent {}
 
 class LocationTeamMembersRequested extends LocationEvent {}
 
-// 🆕 Evento para cargar miembros de sesión colaborativa
+// Evento para cargar miembros de sesión colaborativa
 class LocationCollaborativeSessionMembersRequested extends LocationEvent {
   final String sessionId;
   
@@ -82,9 +82,6 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
   //Para el tracking en tiempo real CON ALMACENAJE EN BD
   bool _isTracking = false;
 
-  //Para el tracking en tiempo real SIN ALMACENAJE EN BD (solo visual)
-  StreamSubscription<Position>? _positionSubscription;
-
   //Para el tracking visual cuando no está guardando en BD
   StreamSubscription<Position>? _visualTrackingSubscription;
 
@@ -102,7 +99,12 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     );
 
     on<LocationPositionUpdated>((event, emit) async {
-      final teamLocations = await LocationService.getTeamLocations();
+      // Verificar si hay sesión colaborativa activa
+      final activeSessionId = LocationService.getActiveCollaborativeSession();
+      
+      final teamLocations = activeSessionId != null
+          ? await LocationService.getCollaborativeSessionLocations(activeSessionId)
+          : await LocationService.getTeamLocations();
 
       emit(
         LocationTrackingActive(
@@ -113,7 +115,12 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     });
 
     on<LocationVisualPositionUpdated>((event, emit) async {
-      final teamLocations = await LocationService.getTeamLocations();
+      // Verificar si hay sesión colaborativa activa
+      final activeSessionId = LocationService.getActiveCollaborativeSession();
+      
+      final teamLocations = activeSessionId != null
+          ? await LocationService.getCollaborativeSessionLocations(activeSessionId)
+          : await LocationService.getTeamLocations();
 
       emit(
         LocationUpdated(
@@ -140,7 +147,12 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
       } else if (hasPermission && permission == LocationPermission.always) {
         final position = await LocationService.getCurrentLocation();
         if (position != null) {
-          final teamLocations = await LocationService.getTeamLocations();
+          // Verificar si hay sesión colaborativa activa
+          final activeSessionId = LocationService.getActiveCollaborativeSession();
+          
+          final teamLocations = activeSessionId != null
+              ? await LocationService.getCollaborativeSessionLocations(activeSessionId)
+              : await LocationService.getTeamLocations();
 
           // Iniciar tracking visual automáticamente
           _startVisualTracking();
@@ -186,51 +198,43 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     _stopVisualTracking();
 
     try {
-      // Iniciar tracking normal
+      // Iniciar sin stream automático - solo por timers controlados
       Position? latestPosition;
-      _positionSubscription = LocationService.positionStream.listen(
-        (position) {
-          latestPosition = position;
-          // Emitir actualización inmediada para fluidez en tiempo real
-          add(LocationPositionUpdated(position));
-        },
-        onError: (error) {
-          print('Error en tracking con BD: $error');
-          // No emitir error inmediatamente, intentar recuperar
-          Future.delayed(Duration(seconds: 5), () {
-            if (_isTracking && latestPosition != null) {
-              add(LocationPositionUpdated(latestPosition!));
-            }
-          });
-        },
-      );
+      
+      // Obtener posición inicial
+      latestPosition = await LocationService.getCurrentLocation();
+      if (latestPosition != null) {
+        add(LocationPositionUpdated(latestPosition));
+      }
 
-      // Guarda cada 30 segundos la ubicación actual en BD (menos agresivo)
-      _dbSaveTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
-        if (latestPosition != null) {
-          await LocationService.saveLocationToDatabase(latestPosition!);
-          print(
-            'Ubicación enviada a BD: ${latestPosition!.latitude}, ${latestPosition!.longitude}',
-          );
+      // Guarda cada 15 segundos capturando la posición actual y enviando a BD
+      _dbSaveTimer = Timer.periodic(const Duration(seconds: 15), (_) async {
+        if (_isTracking) {
+          try {
+            final currentPosition = await LocationService.getCurrentLocation();
+            if (currentPosition != null) {
+              await LocationService.saveLocationToDatabase(currentPosition);
+              print(
+                'Ubicación capturada y enviada a BD: ${currentPosition.latitude}, ${currentPosition.longitude}',
+              );
+            }
+          } catch (e) {
+            print('Error capturando ubicación para BD: $e');
+          }
         }
       });
 
-      // Timer adicional para asegurar actualizaciones de UI durante tracking
-      _trackingUpdateTimer = Timer.periodic(const Duration(seconds: 8), (
+      // Timer para actualizaciones de UI cada 5 segundos (capturar y mostrar ícono)
+      _trackingUpdateTimer = Timer.periodic(const Duration(seconds: 5), (
         _,
       ) async {
-        if (_isTracking && latestPosition != null) {
+        if (_isTracking) {
           try {
-            // 🆕 Verificar si hay sesión colaborativa activa
-            final activeSessionId = LocationService.getActiveCollaborativeSession();
-            
-            if (activeSessionId != null) {
-              await LocationService.getCollaborativeSessionLocations(activeSessionId);
-            } else {
-              await LocationService.getTeamLocations();
+            // Capturar posición actual y actualizar UI
+            final currentPosition = await LocationService.getCurrentLocation();
+            if (currentPosition != null) {
+              add(LocationPositionUpdated(currentPosition));
             }
-            
-            add(LocationPositionUpdated(latestPosition!));
           } catch (e) {
             print('Error en actualización periódica de tracking: $e');
           }
@@ -248,8 +252,7 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
       _isTracking = false;
       _dbSaveTimer?.cancel();
       _trackingUpdateTimer?.cancel();
-      await _positionSubscription?.cancel();
-      _positionSubscription = null;
+      // Ya no hay positionSubscription que cancelar
 
       emit(LocationError('Error al iniciar tracking: $e'));
 
@@ -272,8 +275,7 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
       _isTracking = false;
       _dbSaveTimer?.cancel();
       _trackingUpdateTimer?.cancel();
-      await _positionSubscription?.cancel();
-      _positionSubscription = null;
+      // Ya no hay positionSubscription que cancelar
       // Detener tracking en segundo plano
       await LocationService.stopBackgroundLocationTracking();
 
@@ -282,7 +284,12 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
 
       var position = await LocationService.getCurrentLocation();
       if (position != null) {
-        var teamLocations = await LocationService.getTeamLocations();
+        // Verificar si hay sesión colaborativa activa
+        final activeSessionId = LocationService.getActiveCollaborativeSession();
+        
+        var teamLocations = activeSessionId != null
+            ? await LocationService.getCollaborativeSessionLocations(activeSessionId)
+            : await LocationService.getTeamLocations();
 
         // Mantener el tracking visual
         if (_visualTrackingSubscription == null) {
@@ -309,7 +316,12 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
 
       final position = await LocationService.getCurrentLocation();
       if (position != null) {
-        final teamLocations = await LocationService.getTeamLocations();
+        // Verificar si hay sesión colaborativa activa
+        final activeSessionId = LocationService.getActiveCollaborativeSession();
+        
+        final teamLocations = activeSessionId != null
+            ? await LocationService.getCollaborativeSessionLocations(activeSessionId)
+            : await LocationService.getTeamLocations();
 
         // Si no está haciendo tracking con BD, asegurar que el visual esté activo
         if (!_isTracking && _visualTrackingSubscription == null) {
@@ -328,7 +340,12 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     Emitter<LocationState> emit,
   ) async {
     try {
-      final teamLocations = await LocationService.getTeamLocations();
+      // Verificar si hay sesión colaborativa activa
+      final activeSessionId = LocationService.getActiveCollaborativeSession();
+      
+      final teamLocations = activeSessionId != null
+          ? await LocationService.getCollaborativeSessionLocations(activeSessionId)
+          : await LocationService.getTeamLocations();
 
       if (state is LocationTrackingActive) {
         final currentState = state as LocationTrackingActive;
@@ -352,7 +369,7 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     }
   }
 
-  // 🆕 Handler para cargar miembros de sesión colaborativa
+  // Handler para cargar miembros de sesión colaborativa
   Future<void> _onCollaborativeSessionMembersRequested(
     LocationCollaborativeSessionMembersRequested event,
     Emitter<LocationState> emit,
@@ -380,7 +397,7 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
         );
       }
       
-      print('🗺️ Ubicaciones de sesión colaborativa cargadas: ${sessionLocations.length}');
+      print('Ubicaciones de sesión colaborativa cargadas: ${sessionLocations.length}');
     } catch (e) {
       emit(LocationError('Error al obtener ubicaciones de sesión colaborativa: $e'));
     }
@@ -395,24 +412,10 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     _visualTrackingSubscription?.cancel();
     _visualUpdateTimer?.cancel();
 
-    // Stream principal para tracking visual
-    _visualTrackingSubscription = LocationService.visualPositionStream.listen(
-      (position) {
-        add(LocationVisualPositionUpdated(position));
-      },
-      onError: (error) {
-        print('Error en tracking visual (no crítico): $error');
-        // En caso de error, intentar de nuevo después de un delay
-        Future.delayed(Duration(seconds: 10), () {
-          if (!_isTracking && _visualTrackingSubscription == null) {
-            _startVisualTracking();
-          }
-        });
-      },
-    );
+    // Ya no usar stream automático - solo timer controlado de 5 segundos
 
-    // Timer adicional para asegurar actualizaciones periódicas
-    _visualUpdateTimer = Timer.periodic(Duration(seconds: 10), (_) async {
+    // Timer para actualizaciones visuales cada 5 segundos (sin tracking)
+    _visualUpdateTimer = Timer.periodic(Duration(seconds: 5), (_) async {
       if (!_isTracking) {
         try {
           final position = await LocationService.getCurrentLocation();

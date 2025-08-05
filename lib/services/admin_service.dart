@@ -77,7 +77,9 @@ class AdminService {
       final authResponse = await _client.auth.signUp(
         email: email,
         password: password,
-        data: {'full_name': fullName},
+        data: {
+          'full_name': fullName
+        },
       );
 
       if (authResponse.user != null) {
@@ -318,7 +320,7 @@ class AdminService {
           .select()
           .single();
 
-      print("✅ Equipo creado: $teamResponse");
+      print("Equipo creado: $teamResponse");
       return true;
     } catch (e) {
       print('Error al crear equipo: $e');
@@ -378,10 +380,10 @@ class AdminService {
 
       updateData['updated_at'] = DateTime.now().toIso8601String();
 
-      // 🔹 Actualizar datos principales del equipo
+      // Actualizar datos principales del equipo
       await _client.from('teams').update(updateData).eq('id', teamId);
 
-      // 🔹 Si hay nuevo líder, lo agregamos a users_id si no está ya
+      // Si hay nuevo líder, lo agregamos a users_id si no está ya
       if (leaderId != null && leaderId.isNotEmpty) {
         final teamResponse = await _client
             .from('teams')
@@ -401,7 +403,7 @@ class AdminService {
         }
       }
 
-      print("✅ Equipo actualizado correctamente");
+      print("Equipo actualizado correctamente");
       return true;
     } catch (e) {
       print('Error al actualizar equipo: $e');
@@ -412,7 +414,7 @@ class AdminService {
   // Eliminar equipo (soft delete)
   static Future<bool> deleteTeam(String teamId) async {
     try {
-      // 🔹 Limpiar leader_id y users_id, marcar inactivo
+      // Limpiar leader_id y users_id, marcar inactivo
       await _client
           .from('teams')
           .update({
@@ -423,7 +425,7 @@ class AdminService {
           })
           .eq('id', teamId);
 
-      print("✅ Equipo eliminado (marcado como inactivo)");
+      print("Equipo eliminado (marcado como inactivo)");
       return true;
     } catch (e) {
       print('Error al eliminar equipo: $e');
@@ -434,7 +436,7 @@ class AdminService {
   // Agregar usuario al equipo
   static Future<bool> addUserToTeam(String userId, String teamId) async {
     try {
-      // 1️⃣ Obtener array actual
+      // Obtener array actual
       final teamResponse = await _client
           .from('teams')
           .select('users_id')
@@ -443,12 +445,12 @@ class AdminService {
 
       List<dynamic> currentUsers = teamResponse['users_id'] ?? [];
 
-      // 2️⃣ Agregar solo si no existe
+      // Agregar solo si no existe
       if (!currentUsers.contains(userId)) {
         currentUsers.add(userId);
       }
 
-      // 3️⃣ Actualizar
+      // Actualizar
       await _client
           .from('teams')
           .update({'users_id': currentUsers})

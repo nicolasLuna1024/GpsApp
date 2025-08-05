@@ -84,7 +84,7 @@ class CollaborativeSessionTerminated extends CollaborativeSessionState {
   });
 }
 
-// 🆕 Global CollaborativeSessionBloc Instance
+// Global CollaborativeSessionBloc Instance
 class CollaborativeSessionBloc
     extends Bloc<CollaborativeSessionEvent, CollaborativeSessionState> {
   final CollaborativeSessionService _sessionService =
@@ -149,7 +149,7 @@ class CollaborativeSessionBloc
         );
 
         if (activeSession != null) {
-          // 🆕 Configurar sesión activa en LocationService al crear
+          // Configurar sesión activa en LocationService al crear
           LocationService.setActiveCollaborativeSession(activeSession.id);
           emit(CollaborativeSessionJoined(activeSession));
         }
@@ -186,7 +186,7 @@ class CollaborativeSessionBloc
         );
 
         if (activeSession != null) {
-          // 🆕 Configurar sesión activa en LocationService al unirse
+          // Configurar sesión activa en LocationService al unirse
           LocationService.setActiveCollaborativeSession(activeSession.id);
           emit(CollaborativeSessionJoined(activeSession));
         }
@@ -212,18 +212,18 @@ class CollaborativeSessionBloc
       if (isClosed) return;
       emit(CollaborativeSessionLoading());
 
-      print('🔄 Intentando finalizar sesión: ${event.sessionId}');
+      print('Intentando finalizar sesión: ${event.sessionId}');
 
       await _sessionService.endSession(event.sessionId);
 
-      print('✅ Sesión finalizada exitosamente en el servidor');
+      print('Sesión finalizada exitosamente en el servidor');
 
       if (!isClosed) {
-        // 🆕 Limpiar sesión activa si es la que se está finalizando
+        // Limpiar sesión activa si es la que se está finalizando
         final currentActiveSession = LocationService.getActiveCollaborativeSession();
         if (currentActiveSession == event.sessionId) {
           LocationService.setActiveCollaborativeSession(null);
-          print('🎯 Sesión activa limpiada: ${event.sessionId}');
+          print('Sesión activa limpiada: ${event.sessionId}');
         }
         
         // Recargar las sesiones
@@ -240,10 +240,10 @@ class CollaborativeSessionBloc
           CollaborativeSessionLoaded(sessions: sessions, activeSession: null),
         );
 
-        print('✅ Estados emitidos correctamente');
+        print('Estados emitidos correctamente');
       }
     } catch (e) {
-      print('❌ Error en _onSessionEndRequested: $e');
+      print('Error en _onSessionEndRequested: $e');
       if (!isClosed) {
         emit(
           CollaborativeSessionError(
@@ -275,7 +275,7 @@ class CollaborativeSessionBloc
   }
 }
 
-// 🌟 Global instance
+// Global instance
 late final CollaborativeSessionBloc globalCollaborativeSessionBloc;
 
 void initializeGlobalCollaborativeSessionBloc() {

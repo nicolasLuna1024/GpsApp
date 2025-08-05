@@ -42,6 +42,7 @@ class Terrain {
   final double area; // en metros cuadrados
   final String userId;
   final String? teamId;
+  final String? teamName; // NUEVA FUNCIONALIDAD: Nombre del equipo para UI
   final DateTime createdAt;
   final DateTime updatedAt;
   final bool isActive;
@@ -54,6 +55,7 @@ class Terrain {
     required this.area,
     required this.userId,
     this.teamId,
+    this.teamName, // NUEVA FUNCIONALIDAD: Parámetro opcional
     required this.createdAt,
     required this.updatedAt,
     this.isActive = true,
@@ -75,6 +77,13 @@ class Terrain {
   }
 
   factory Terrain.fromJson(Map<String, dynamic> json) {
+    // NUEVA FUNCIONALIDAD: Extraer nombre del equipo si está presente
+    String? teamName;
+    if (json['teams'] != null) {
+      final teams = json['teams'] as Map<String, dynamic>;
+      teamName = teams['name'] as String?;
+    }
+
     return Terrain(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -85,6 +94,7 @@ class Terrain {
       area: (json['area'] as num).toDouble(),
       userId: json['user_id'] as String,
       teamId: json['team_id'] as String?, // Permitir null
+      teamName: teamName, // NUEVA FUNCIONALIDAD: Asignar nombre del equipo
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
       isActive: json['is_active'] as bool? ?? true,

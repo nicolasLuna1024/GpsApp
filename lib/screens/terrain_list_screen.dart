@@ -274,6 +274,13 @@ class _TerrainListScreenState extends State<TerrainListScreen> {
                     label: '${terrain.points.length} puntos',
                     color: Colors.green,
                   ),
+                  
+                  const SizedBox(width: 8),
+                  _buildInfoChip(
+                    icon: terrain.teamName != null ? Icons.group : Icons.person,
+                    label: terrain.teamName ?? 'Individual',
+                    color: terrain.teamName != null ? Colors.purple : Colors.orange,
+                  ),
                 ],
               ),
               const SizedBox(height: 8),
@@ -514,6 +521,116 @@ class _TerrainListScreenState extends State<TerrainListScreen> {
                   foregroundColor: Colors.white,
                 ),
                 child: const Text('Eliminar'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTerrainWithTeamCard(
+    BuildContext context, 
+    Map<String, dynamic> terrainData
+  ) {
+    // Crear objeto Terrain para usar los métodos existentes
+    final terrain = Terrain.fromJson(terrainData);
+    final teamInfo = terrainData['teams'] as Map<String, dynamic>?;
+    final teamName = teamInfo?['name'] as String?;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: () => _showTerrainDetails(context, terrain),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange[100],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.terrain,
+                      color: Colors.orange[600],
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          terrain.name,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (terrain.description != null)
+                          Text(
+                            terrain.description!,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    onSelected: (value) {
+                      if (value == 'delete') {
+                        _showDeleteDialog(context, terrain);
+                      }
+                    },
+                    itemBuilder: (BuildContext context) => [
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text('Eliminar'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  _buildInfoChip(
+                    icon: Icons.straighten,
+                    label: terrain.formattedArea,
+                    color: Colors.blue,
+                  ),
+                  const SizedBox(width: 8),
+                  _buildInfoChip(
+                    icon: Icons.location_on,
+                    label: '${terrain.points.length} puntos',
+                    color: Colors.green,
+                  ),
+
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Creado: ${_formatDate(terrain.createdAt)}',
+                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
               ),
             ],
           ),

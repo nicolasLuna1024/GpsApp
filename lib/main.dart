@@ -13,7 +13,7 @@ void main() async {
   // Inicializar Supabase
   await SupabaseConfig.initialize();
 
-  // 🆕 Inicializar la instancia global del CollaborativeSessionBloc
+  // Inicializar la instancia global del CollaborativeSessionBloc
   initializeGlobalCollaborativeSessionBloc();
 
   runApp(const MyApp());
@@ -28,7 +28,7 @@ class MyApp extends StatelessWidget {
       providers: [
         BlocProvider(create: (context) => AuthBloc()..add(AuthStarted())),
         BlocProvider(create: (context) => LocationBloc()),
-        // 🆕 Usar la instancia global
+        // Usar la instancia global
         BlocProvider<CollaborativeSessionBloc>.value(
           value: globalCollaborativeSessionBloc,
         ),

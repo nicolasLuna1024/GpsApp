@@ -25,7 +25,9 @@ class AuthService {
       final response = await _client.auth.signUp(
         email: email,
         password: password,
-        data: {'full_name': fullName},
+        data: {
+          'full_name': fullName
+          },
       );
 
       if (response.user != null) {
@@ -49,6 +51,7 @@ class AuthService {
         email: email,
         password: password,
       );
+
 
       if (response.user != null) {
         // Verificar si el usuario está activo en nuestra base de datos

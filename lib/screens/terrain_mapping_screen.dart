@@ -186,6 +186,7 @@ class _TerrainMappingScreenState extends State<TerrainMappingScreen> {
             ? null
             : _descriptionController.text.trim(),
         points: points,
+        teamId: null, // FORZAR NULL para mediciones individuales
       ),
     );
   }

@@ -118,7 +118,8 @@ class TerrainBloc extends Bloc<TerrainEvent, TerrainState> {
     try {
       emit(TerrainLoading());
 
-      final terrains = await TerrainService.getUserTerrains();
+      // MODIFICADO: Usar función que combina terrenos individuales y de equipos
+      final terrains = await TerrainService.getUserAndTeamTerrainsForUI();
       final stats = await TerrainService.getTerrainStats();
 
       final currentState = state is TerrainLoaded
@@ -130,6 +131,8 @@ class TerrainBloc extends Bloc<TerrainEvent, TerrainState> {
       emit(TerrainError('Error al cargar terrenos: $e'));
     }
   }
+
+
 
   Future<void> _onLoadTeamTerrains(
     TerrainLoadTeamTerrains event,

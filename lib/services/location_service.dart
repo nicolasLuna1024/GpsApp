@@ -14,22 +14,22 @@ class LocationService {
   static loc.Location? _backgroundLocation;
   static StreamSubscription<loc.LocationData>? _backgroundLocationSubscription;
 
-  // 🆕 Trackear sesión colaborativa activa
+  //Trackear sesión colaborativa activa
   static String? _activeCollaborativeSessionId;
 
-  // 🆕 Métodos para gestionar sesión colaborativa
+  //Métodos para gestionar sesión colaborativa
   static void setActiveCollaborativeSession(String? sessionId) {
     _activeCollaborativeSessionId = sessionId;
-    print(
-      '🎯 LocationService: Active collaborative session set to: $sessionId',
-    );
+    /*print(
+      'LocationService: Active collaborative session set to: $sessionId',
+    );*/
   }
 
   static String? getActiveCollaborativeSession() {
     return _activeCollaborativeSessionId;
   }
 
-  // 🆕 Método para obtener sesión activa desde el BLoC global
+  // Método para obtener sesión activa desde el BLoC global
   static String? _getCurrentCollaborativeSessionId() {
     try {
       final state = globalCollaborativeSessionBloc.state;
@@ -38,7 +38,6 @@ class LocationService {
       }
       return _activeCollaborativeSessionId;
     } catch (e) {
-      print('🔥 Error getting collaborative session: $e');
       return _activeCollaborativeSessionId;
     }
   }
@@ -66,9 +65,9 @@ class LocationService {
 
       return true;
     } catch (e) {
-      print(
+      /*print(
         'Error al solicitar permisos de ubicación para background_locator_2: $e',
-      );
+      );*/
       return false;
     }
   }
@@ -83,7 +82,7 @@ class LocationService {
 
       return position;
     } catch (e) {
-      print('Error al obtener ubicación actual: $e');
+      //print('Error al obtener ubicación actual: $e');
       return null;
     }
   }
@@ -100,7 +99,7 @@ class LocationService {
           await _saveLocationToDatabase(position);
         },
         onError: (error) {
-          print('Error en tracking de ubicación: $error');
+          //print('Error en tracking de ubicación: $error');
         },
       );
 
@@ -115,9 +114,9 @@ class LocationService {
         },
       );
 
-      print('Tracking de ubicación iniciado');
+      //print('Tracking de ubicación iniciado');
     } catch (e) {
-      print('Error al iniciar tracking: $e');
+      //print('Error al iniciar tracking: $e');
     }
   }
 
@@ -132,7 +131,7 @@ class LocationService {
       if (!_serviceEnabled) {
         _serviceEnabled = await _backgroundLocation!.requestService();
         if (!_serviceEnabled) {
-          print('Servicio de ubicación no habilitado para background');
+          //print('Servicio de ubicación no habilitado para background');
           return;
         }
       }
@@ -142,7 +141,7 @@ class LocationService {
         _permissionGranted = await _backgroundLocation!.requestPermission();
         if (_permissionGranted != loc.PermissionStatus.granted &&
             _permissionGranted != loc.PermissionStatus.grantedLimited) {
-          print('Permiso de ubicación no concedido para background');
+          //print('Permiso de ubicación no concedido para background');
           return;
         }
       }
@@ -199,21 +198,21 @@ class LocationService {
     print('Tracking en segundo plano detenido');
   }
 
-  // Stream para tracking con guardado en BD (más preciso)
+  // Stream para tracking con guardado en BD
   static Stream<Position> get positionStream => Geolocator.getPositionStream(
     locationSettings: const LocationSettings(
       accuracy: LocationAccuracy.high,
-      distanceFilter: 5, // Filtro de 5 metros para reducir sensibilidad
-      timeLimit: Duration(seconds: 30), // Timeout generoso
+      distanceFilter: 5, // Filtro de 5 metros
+      timeLimit: Duration(seconds: 30),
     ),
   );
 
-  // Stream para tracking visual solamente (menos agresivo)
+  // Stream para tracking visual solamente
   static Stream<Position> get visualPositionStream =>
       Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          distanceFilter: 5, // Filtro de 5 metros para reducir sensibilidad
+          distanceFilter: 5, // Filtro de 5 metros
           timeLimit: Duration(seconds: 30),
         ),
       );
@@ -235,7 +234,7 @@ class LocationService {
       final user = AuthService.currentUser;
       if (user == null) return;
 
-      // 🆕 Obtener sesión colaborativa activa
+      // Obtener sesión colaborativa activa
       final collaborativeSessionId = _getCurrentCollaborativeSessionId();
 
       final userLocation = UserLocation(
@@ -250,16 +249,14 @@ class LocationService {
         timestamp: DateTime.now(),
         isActive: true,
         collaborativeSessionId:
-            collaborativeSessionId, // 🆕 Incluir sesión colaborativa
+            collaborativeSessionId,
       );
 
-      // Primero desactivar ubicaciones anteriores
       await SupabaseConfig.client
           .from('user_locations')
           .update({'is_active': false})
           .eq('user_id', user.id);
 
-      // Insertar nueva ubicación
       await SupabaseConfig.client
           .from('user_locations')
           .insert(userLocation.toJson());
@@ -276,7 +273,6 @@ class LocationService {
       final user = AuthService.currentUser;
       if (user == null) return;
 
-      // 🆕 Obtener sesión colaborativa activa
       final collaborativeSessionId = _getCurrentCollaborativeSessionId();
 
       final userLocation = UserLocation(
@@ -291,7 +287,7 @@ class LocationService {
         timestamp: DateTime.now(),
         isActive: true,
         collaborativeSessionId:
-            collaborativeSessionId, // 🆕 Incluir sesión colaborativa
+            collaborativeSessionId,
       );
 
       final seleccion = await SupabaseConfig.client
@@ -315,7 +311,7 @@ class LocationService {
           .insert(userLocation.toJson());
 
       print(
-        '📍 Ubicación guardada: ${position.latitude}, ${position.longitude} (Session: $collaborativeSessionId)',
+        'Ubicación guardada: ${position.latitude}, ${position.longitude} (Session: $collaborativeSessionId)',
       );
     } catch (e) {
       print('Error al guardar ubicación: $e');
@@ -358,7 +354,7 @@ class LocationService {
     }
   }
 
-  // 🆕 Obtener ubicaciones activas de una sesión colaborativa específica
+  // Obtener ubicaciones activas de una sesión colaborativa específica
   static Future<List<UserLocation>> getCollaborativeSessionLocations(
     String sessionId,
   ) async {
@@ -381,7 +377,7 @@ class LocationService {
           .map<UserLocation>((json) => UserLocation.fromJson(json))
           .toList();
 
-      print('🗺️ Ubicaciones sesión colaborativa $sessionId: ${locations.length} participantes');
+      print('Ubicaciones sesión colaborativa $sessionId: ${locations.length} participantes');
       
       return locations;
     } catch (e) {
