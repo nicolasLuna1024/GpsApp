@@ -1192,7 +1192,7 @@ class _MapScreenState extends State<MapScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('ID: ${location.userId}'),
+            Text('Nombre: ${location.fullName ?? 'Usuario'}'),
             Text('Lat: ${location.latitude.toStringAsFixed(6)}'),
             Text('Lng: ${location.longitude.toStringAsFixed(6)}'),
             if (location.accuracy != null)

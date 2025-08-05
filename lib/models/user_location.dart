@@ -1,6 +1,7 @@
 class UserLocation {
   final String id;
   final String userId;
+  final String? fullName; // Nombre completo del usuario
   final double latitude;
   final double longitude;
   final double? altitude;
@@ -14,6 +15,7 @@ class UserLocation {
   const UserLocation({
     required this.id,
     required this.userId,
+    this.fullName,
     required this.latitude,
     required this.longitude,
     this.altitude,
@@ -26,9 +28,21 @@ class UserLocation {
   });
 
   factory UserLocation.fromJson(Map<String, dynamic> json) {
+    // Extraer full_name del JOIN con user_profiles si está disponible
+    String? fullName;
+    if (json['user_profiles'] != null) {
+      final userProfile = json['user_profiles'];
+      if (userProfile is List && userProfile.isNotEmpty) {
+        fullName = userProfile.first['full_name'] as String?;
+      } else if (userProfile is Map<String, dynamic>) {
+        fullName = userProfile['full_name'] as String?;
+      }
+    }
+    
     return UserLocation(
       id: json['id'] as String,
       userId: json['user_id'] as String,
+      fullName: fullName,
       latitude: (json['latitude'] as num).toDouble(),
       longitude: (json['longitude'] as num).toDouble(),
       altitude: json['altitude'] != null
@@ -66,24 +80,28 @@ class UserLocation {
   UserLocation copyWith({
     String? id,
     String? userId,
+    String? fullName,
     double? latitude,
     double? longitude,
     double? altitude,
     double? accuracy,
     double? heading,
     double? speed,
+    String? collaborativeSessionId,
     DateTime? timestamp,
     bool? isActive,
   }) {
     return UserLocation(
       id: id ?? this.id,
       userId: userId ?? this.userId,
+      fullName: fullName ?? this.fullName,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       altitude: altitude ?? this.altitude,
       accuracy: accuracy ?? this.accuracy,
       heading: heading ?? this.heading,
       speed: speed ?? this.speed,
+      collaborativeSessionId: collaborativeSessionId ?? this.collaborativeSessionId,
       timestamp: timestamp ?? this.timestamp,
       isActive: isActive ?? this.isActive,
     );
