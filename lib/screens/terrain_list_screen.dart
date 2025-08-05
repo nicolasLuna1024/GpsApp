@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../bloc/terrain_bloc.dart';
 import '../models/terrain.dart';
 import 'terrain_mapping_screen.dart';
@@ -382,36 +384,132 @@ class _TerrainListScreenState extends State<TerrainListScreen> {
   void _showTerrainDetails(BuildContext context, Terrain terrain) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(terrain.name),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (terrain.description != null) ...[
-              Text(
-                'Descripción:',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: Container(
+          width: double.maxFinite,
+          height: MediaQuery.of(context).size.height * 0.8,
+          child: Column(
+            children: [
+              // Header con información del terreno
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.orange[600],
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(12),
+                    topRight: Radius.circular(12),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.terrain, color: Colors.white, size: 24),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            terrain.name,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
+                    ),
+                    if (terrain.description != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        terrain.description!,
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-              Text(terrain.description!),
-              const SizedBox(height: 12),
+              
+              // Información básica
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: Colors.grey[50],
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _buildInfoChip(
+                        icon: Icons.straighten,
+                        label: terrain.formattedArea,
+                        color: Colors.blue,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildInfoChip(
+                        icon: Icons.location_on,
+                        label: '${terrain.points.length} puntos',
+                        color: Colors.green,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildInfoChip(
+                        icon: terrain.teamName != null ? Icons.group : Icons.person,
+                        label: terrain.teamName ?? 'Individual',
+                        color: terrain.teamName != null ? Colors.purple : Colors.orange,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Mapa
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: _buildTerrainMap(terrain),
+                  ),
+                ),
+              ),
+              
+              // Footer con fechas
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(12),
+                    bottomRight: Radius.circular(12),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Creado: ${_formatDate(terrain.createdAt)}',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                    Text(
+                      'Actualizado: ${_formatDate(terrain.updatedAt)}',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              ),
             ],
-            Text(
-              'Área: ${terrain.formattedArea}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text('Puntos: ${terrain.points.length}'),
-            Text('Creado: ${_formatDate(terrain.createdAt)}'),
-            Text('Actualizado: ${_formatDate(terrain.updatedAt)}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cerrar'),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -637,6 +735,156 @@ class _TerrainListScreenState extends State<TerrainListScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildTerrainMap(Terrain terrain) {
+    if (terrain.points.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.map_outlined, size: 64, color: Colors.grey),
+            SizedBox(height: 16),
+            Text(
+              'No hay puntos para mostrar',
+              style: TextStyle(color: Colors.grey, fontSize: 16),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Convertir puntos del terreno a LatLng
+    final points = terrain.points
+        .map((point) => LatLng(point.latitude, point.longitude))
+        .toList();
+
+    // Calcular el centro del mapa
+    double centerLat = points.map((p) => p.latitude).reduce((a, b) => a + b) / points.length;
+    double centerLng = points.map((p) => p.longitude).reduce((a, b) => a + b) / points.length;
+    final center = LatLng(centerLat, centerLng);
+
+    // Calcular zoom apropiado basado en los bounds
+    final bounds = _calculateBounds(points);
+    double zoom = _calculateZoom(bounds);
+
+    return FlutterMap(
+      options: MapOptions(
+        initialCenter: center,
+        initialZoom: zoom,
+        minZoom: 3.0,
+        maxZoom: 20.0,
+      ),
+      children: [
+        // Capa de tiles
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.example.app_final',
+        ),
+        
+        // Polígono del terreno
+        if (points.length >= 3)
+          PolygonLayer(
+            polygons: [
+              Polygon(
+                points: points,
+                color: Colors.orange.withOpacity(0.3),
+                borderColor: Colors.orange[600]!,
+                borderStrokeWidth: 2,
+              ),
+            ],
+          ),
+        
+        // Líneas conectando los puntos
+        if (points.length >= 2)
+          PolylineLayer(
+            polylines: [
+              Polyline(
+                points: points,
+                color: Colors.orange[600]!,
+                strokeWidth: 2,
+              ),
+            ],
+          ),
+        
+        // Marcadores de los puntos
+        MarkerLayer(
+          markers: points.asMap().entries.map((entry) {
+            final index = entry.key;
+            final point = entry.value;
+            
+            return Marker(
+              point: point,
+              child: Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: Colors.orange[600],
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.orange.withOpacity(0.3),
+                      blurRadius: 4,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Text(
+                    '${index + 1}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  // Calcular los bounds (límites) de los puntos
+  Map<String, double> _calculateBounds(List<LatLng> points) {
+    if (points.isEmpty) {
+      return {'minLat': 0.0, 'maxLat': 0.0, 'minLng': 0.0, 'maxLng': 0.0};
+    }
+
+    double minLat = points.first.latitude;
+    double maxLat = points.first.latitude;
+    double minLng = points.first.longitude;
+    double maxLng = points.first.longitude;
+
+    for (final point in points) {
+      if (point.latitude < minLat) minLat = point.latitude;
+      if (point.latitude > maxLat) maxLat = point.latitude;
+      if (point.longitude < minLng) minLng = point.longitude;
+      if (point.longitude > maxLng) maxLng = point.longitude;
+    }
+
+    return {
+      'minLat': minLat,
+      'maxLat': maxLat,
+      'minLng': minLng,
+      'maxLng': maxLng,
+    };
+  }
+
+  // Calcular zoom apropiado basado en los bounds
+  double _calculateZoom(Map<String, double> bounds) {
+    final latDiff = bounds['maxLat']! - bounds['minLat']!;
+    final lngDiff = bounds['maxLng']! - bounds['minLng']!;
+    final maxDiff = latDiff > lngDiff ? latDiff : lngDiff;
+
+    // Zoom basado en la diferencia máxima
+    if (maxDiff > 0.01) return 12.0;  // Área grande
+    if (maxDiff > 0.005) return 14.0; // Área mediana
+    if (maxDiff > 0.001) return 16.0; // Área pequeña
+    return 18.0; // Área muy pequeña
   }
 
   String _formatDate(DateTime date) {

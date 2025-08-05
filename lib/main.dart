@@ -10,7 +10,7 @@ import 'screens/home_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Inicializar Supabase
+  // Inicializar Supabase 
   await SupabaseConfig.initialize();
 
   // Inicializar la instancia global del CollaborativeSessionBloc
