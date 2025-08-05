@@ -21,14 +21,12 @@ class AdminCreateUser extends AdminEvent {
   final String password;
   final String fullName;
   final String role;
-  final String? teamId;
 
   AdminCreateUser({
     required this.email,
     required this.password,
     required this.fullName,
     required this.role,
-    this.teamId,
   });
 }
 
@@ -36,14 +34,12 @@ class AdminUpdateUser extends AdminEvent {
   final String userId;
   final String? fullName;
   final String? role;
-  final String? teamId;
   final bool? isActive;
 
   AdminUpdateUser({
     required this.userId,
     this.fullName,
     this.role,
-    this.teamId,
     this.isActive,
   });
 }
@@ -187,6 +183,12 @@ class AdminAccessDenied extends AdminState {}
 
 // BLoC de administración
 class AdminBloc extends Bloc<AdminEvent, AdminState> {
+  // Cache para persistir datos entre navegaciones
+  List<UserProfile> _cachedUsers = [];
+  Map<String, dynamic> _cachedStats = {};
+  List<Map<String, dynamic>> _cachedTeams = [];
+  List<UserLocation> _cachedActiveLocations = [];
+
   AdminBloc() : super(AdminInitial()) {
     on<AdminLoadUsers>(_onLoadUsers);
     on<AdminLoadStats>(_onLoadStats);
@@ -204,8 +206,8 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
     on<AdminRemoveUserFromTeam>(_onRemoveUserFromTeam);
     on<AdminLoadAvailableUsers>(_onLoadAvailableUsers);
     on<AdminLoadTeamMembers>(_onLoadTeamMembers);
-    on<AdminLoadUserHistory>(_onLoadUserHistory);  }
-  
+    on<AdminLoadUserHistory>(_onLoadUserHistory);
+  }
 
   Future<void> _onLoadUsers(
     AdminLoadUsers event,
@@ -219,9 +221,19 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
         return;
       }
 
-      emit(AdminLoading());
+      // Si tenemos datos en caché, mostrar primero
+      if (_cachedUsers.isNotEmpty) {
+        final currentState = state is AdminLoaded
+            ? state as AdminLoaded
+            : AdminLoaded();
+        emit(currentState.copyWith(users: _cachedUsers));
+      } else {
+        emit(AdminLoading());
+      }
 
       final users = await AdminService.getAllUsers();
+      _cachedUsers = users; // Guardar en caché
+
       final currentState = state is AdminLoaded
           ? state as AdminLoaded
           : AdminLoaded();
@@ -243,7 +255,17 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
         return;
       }
 
+      // Si tenemos estadísticas en caché, mostrar primero
+      if (_cachedStats.isNotEmpty) {
+        final currentState = state is AdminLoaded
+            ? state as AdminLoaded
+            : AdminLoaded();
+        emit(currentState.copyWith(stats: _cachedStats));
+      }
+
       final stats = await AdminService.getSystemStats();
+      _cachedStats = stats; // Guardar en caché
+
       final currentState = state is AdminLoaded
           ? state as AdminLoaded
           : AdminLoaded();
@@ -259,17 +281,22 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
     Emitter<AdminState> emit,
   ) async {
     try {
+      // Si tenemos equipos en caché, mostrar primero
+      if (_cachedTeams.isNotEmpty) {
+        final currentState = state is AdminLoaded
+            ? state as AdminLoaded
+            : AdminLoaded();
+        emit(currentState.copyWith(teams: _cachedTeams));
+      }
+
       final teams = await AdminService.getTeams();
+      _cachedTeams = teams; // Guardar en caché
 
       final currentState = state is AdminLoaded
           ? (state as AdminLoaded)
           : AdminLoaded();
 
-      emit(
-        currentState.copyWith(
-          teams: List.from(teams),
-        ),
-      );
+      emit(currentState.copyWith(teams: List.from(teams)));
     } catch (e) {
       emit(AdminError('Error al cargar equipos: $e'));
     }
@@ -286,7 +313,17 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
         return;
       }
 
+      // Si tenemos ubicaciones en caché, mostrar primero
+      if (_cachedActiveLocations.isNotEmpty) {
+        final currentState = state is AdminLoaded
+            ? state as AdminLoaded
+            : AdminLoaded();
+        emit(currentState.copyWith(activeLocations: _cachedActiveLocations));
+      }
+
       final locations = await AdminService.getAllActiveLocations();
+      _cachedActiveLocations = locations; // Guardar en caché
+
       final currentState = state is AdminLoaded
           ? state as AdminLoaded
           : AdminLoaded();
@@ -315,30 +352,42 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
         password: event.password,
         fullName: event.fullName,
         role: event.role,
-        teamId: event.teamId,
       );
 
       if (success) {
-        // Recargar todos los datos directamente
+        // Recargar todos los datos
         final users = await AdminService.getAllUsers();
         final stats = await AdminService.getSystemStats();
         final teams = await AdminService.getTeams();
         final activeLocations = await AdminService.getAllActiveLocations();
 
+        // Actualizar caché
+        _cachedUsers = users;
+        _cachedStats = stats;
+        _cachedTeams = teams;
+        _cachedActiveLocations = activeLocations;
+
+        // Emitir estado actualizado con mensaje de éxito
         final currentState = state is AdminLoaded
             ? state as AdminLoaded
             : AdminLoaded();
 
-        emit(
-          currentState.copyWith(
-            users: users,
-            stats: stats,
-            teams: teams,
-            activeLocations: activeLocations,
-          ),
+        final newState = currentState.copyWith(
+          users: users,
+          stats: stats,
+          teams: teams,
+          activeLocations: activeLocations,
         );
 
+        emit(newState);
+
+        // Esperar un momento antes de emitir el mensaje de éxito
+        await Future.delayed(const Duration(milliseconds: 100));
         emit(AdminSuccess('Usuario creado exitosamente'));
+
+        // Después del mensaje de éxito, volver al estado loaded
+        await Future.delayed(const Duration(milliseconds: 500));
+        emit(newState);
       } else {
         emit(AdminError('Error al crear usuario'));
       }
@@ -362,7 +411,6 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
         userId: event.userId,
         fullName: event.fullName,
         role: event.role,
-        teamId: event.teamId,
         isActive: event.isActive,
       );
 
@@ -448,13 +496,13 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
     Emitter<AdminState> emit,
   ) async {
     try {
-      emit(AdminLoading());
-
       final isAdmin = await AdminService.isCurrentUserAdmin();
       if (!isAdmin) {
         emit(AdminAccessDenied());
         return;
       }
+
+      emit(AdminLoading());
 
       final success = await AdminService.createTeam(
         name: event.name,
@@ -463,7 +511,39 @@ class AdminBloc extends Bloc<AdminEvent, AdminState> {
       );
 
       if (success) {
+        // Recargar todos los datos
+        final users = await AdminService.getAllUsers();
+        final stats = await AdminService.getSystemStats();
+        final teams = await AdminService.getTeams();
+        final activeLocations = await AdminService.getAllActiveLocations();
+
+        // Actualizar caché
+        _cachedUsers = users;
+        _cachedStats = stats;
+        _cachedTeams = teams;
+        _cachedActiveLocations = activeLocations;
+
+        // Emitir estado actualizado
+        final currentState = state is AdminLoaded
+            ? state as AdminLoaded
+            : AdminLoaded();
+
+        final newState = currentState.copyWith(
+          users: users,
+          stats: stats,
+          teams: teams,
+          activeLocations: activeLocations,
+        );
+
+        emit(newState);
+
+        // Esperar un momento antes de emitir el mensaje de éxito
+        await Future.delayed(const Duration(milliseconds: 100));
         emit(AdminSuccess('Equipo creado exitosamente'));
+
+        // Después del mensaje de éxito, volver al estado loaded
+        await Future.delayed(const Duration(milliseconds: 500));
+        emit(newState);
       } else {
         emit(AdminError('Error al crear equipo'));
       }

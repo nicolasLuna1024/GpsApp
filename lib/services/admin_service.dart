@@ -28,30 +28,69 @@ class AdminService {
   // Obtener todos los usuarios
   static Future<List<UserProfile>> getAllUsers() async {
     try {
-      final response = await _client
-          .from('user_profiles')
-          .select('''
-            *,
-            teams!fk_user_profiles_team(name)
-          ''')
-          .order('created_at', ascending: false);
+      // Primero verificamos si el usuario actual es admin
+      final isAdmin = await isCurrentUserAdmin();
+      if (!isAdmin) {
+        print('Usuario no autorizado para ver todos los usuarios');
+        return [];
+      }
 
-      return response
+      // Usamos una función RPC para obtener todos los usuarios como admin
+      final response = await _client.rpc('get_all_users_as_admin');
+
+      if (response == null) {
+        // Fallback: intentar con consulta directa
+        final fallbackResponse = await _client
+            .from('user_profiles')
+            .select('*')
+            .order('created_at', ascending: false);
+
+        return fallbackResponse
+            .map<UserProfile>((json) => UserProfile.fromJson(json))
+            .toList();
+      }
+
+      return (response as List)
           .map<UserProfile>((json) => UserProfile.fromJson(json))
           .toList();
     } catch (e) {
       print('Error al obtener usuarios: $e');
-      return [];
+      // Intentar consulta directa como fallback
+      try {
+        final fallbackResponse = await _client
+            .from('user_profiles')
+            .select('*')
+            .order('created_at', ascending: false);
+
+        return fallbackResponse
+            .map<UserProfile>((json) => UserProfile.fromJson(json))
+            .toList();
+      } catch (fallbackError) {
+        print('Error en fallback: $fallbackError');
+        return [];
+      }
     }
   }
 
   // Obtener usuarios por equipo
   static Future<List<UserProfile>> getUsersByTeam(String teamId) async {
     try {
+      // Primero obtener el equipo con sus miembros
+      final teamResponse = await _client
+          .from('teams')
+          .select('users_id')
+          .eq('id', teamId)
+          .single();
+
+      final List<dynamic> userIds = teamResponse['users_id'] ?? [];
+
+      if (userIds.isEmpty) return [];
+
+      // Obtener perfiles de los usuarios del equipo
       final response = await _client
           .from('user_profiles')
-          .select()
-          .eq('team_id', teamId)
+          .select('*')
+          .inFilter('id', userIds)
           .eq('is_active', true)
           .order('full_name', ascending: true);
 
@@ -70,25 +109,21 @@ class AdminService {
     required String password,
     required String fullName,
     String role = 'topografo',
-    String? teamId,
   }) async {
     try {
       // Crear usuario en auth
       final authResponse = await _client.auth.signUp(
         email: email,
         password: password,
-        data: {
-          'full_name': fullName
-        },
+        data: {'full_name': fullName},
       );
 
       if (authResponse.user != null) {
-        // Actualizar perfil con rol y equipo
+        // Actualizar perfil con rol
         await _client
             .from('user_profiles')
             .update({
               'role': role,
-              'team_id': teamId,
               'updated_at': DateTime.now().toIso8601String(),
             })
             .eq('id', authResponse.user!.id);
@@ -107,7 +142,6 @@ class AdminService {
     required String userId,
     String? fullName,
     String? role,
-    String? teamId,
     bool? isActive,
   }) async {
     try {
@@ -117,7 +151,6 @@ class AdminService {
 
       if (fullName != null) updates['full_name'] = fullName;
       if (role != null) updates['role'] = role;
-      if (teamId != null) updates['team_id'] = teamId;
       if (isActive != null) updates['is_active'] = isActive;
 
       await _client.from('user_profiles').update(updates).eq('id', userId);
@@ -168,6 +201,27 @@ class AdminService {
   // Obtener ubicaciones de todos los usuarios en tiempo real
   static Future<List<UserLocation>> getAllActiveLocations() async {
     try {
+      // Verificar si el usuario actual es admin
+      final isAdmin = await isCurrentUserAdmin();
+      if (!isAdmin) {
+        print('Usuario no autorizado para ver ubicaciones');
+        return [];
+      }
+
+      // Usar función RPC para obtener ubicaciones activas
+      try {
+        final response = await _client.rpc('get_active_locations_as_admin');
+
+        if (response != null) {
+          return (response as List)
+              .map<UserLocation>((json) => UserLocation.fromJson(json))
+              .toList();
+        }
+      } catch (rpcError) {
+        print('Error en RPC para ubicaciones, usando fallback: $rpcError');
+      }
+
+      // Fallback: consulta directa
       final response = await _client
           .from('user_locations')
           .select('''
@@ -189,6 +243,40 @@ class AdminService {
 
   // Obtener estadísticas del sistema
   static Future<Map<String, dynamic>> getSystemStats() async {
+    try {
+      // Verificar si el usuario actual es admin
+      final isAdmin = await isCurrentUserAdmin();
+      if (!isAdmin) {
+        print('Usuario no autorizado para ver estadísticas');
+        return {
+          'total_users': 0,
+          'active_users': 0,
+          'admins': 0,
+          'topografos': 0,
+          'locations_today': 0,
+          'teams_count': 0,
+        };
+      }
+
+      // Usar función RPC para obtener estadísticas
+      final response = await _client.rpc('get_system_stats_as_admin');
+
+      if (response != null) {
+        return Map<String, dynamic>.from(response);
+      }
+
+      // Fallback: consultas individuales
+      final stats = await _getFallbackStats();
+      return stats;
+    } catch (e) {
+      print('Error al obtener estadísticas: $e');
+      // Fallback en caso de error
+      return await _getFallbackStats();
+    }
+  }
+
+  // Función helper para estadísticas fallback
+  static Future<Map<String, dynamic>> _getFallbackStats() async {
     try {
       // Contar usuarios totales
       final totalUsersResponse = await _client
@@ -227,21 +315,30 @@ class AdminService {
           .gte('timestamp', startOfDay.toIso8601String())
           .count();
 
+      // Contar equipos activos
+      final teamsResponse = await _client
+          .from('teams')
+          .select('id')
+          .eq('is_active', true)
+          .count();
+
       return {
         'total_users': totalUsersResponse.count,
         'active_users': activeUsersResponse.count,
         'admins': adminsResponse.count,
         'topografos': topografosResponse.count,
         'locations_today': locationsResponse.count,
+        'teams_count': teamsResponse.count,
       };
     } catch (e) {
-      print('Error al obtener estadísticas: $e');
+      print('Error en fallback stats: $e');
       return {
         'total_users': 0,
         'active_users': 0,
         'admins': 0,
         'topografos': 0,
         'locations_today': 0,
+        'teams_count': 0,
       };
     }
   }
@@ -249,10 +346,32 @@ class AdminService {
   // Obtener equipos disponibles
   static Future<List<Map<String, dynamic>>> getTeams() async {
     try {
-      // Traer equipos con todos sus datos
+      // Verificar si el usuario actual es admin
+      final isAdmin = await isCurrentUserAdmin();
+      if (!isAdmin) {
+        print('Usuario no autorizado para ver equipos');
+        return [];
+      }
+
+      // Usar función RPC para obtener equipos
+      try {
+        final response = await _client.rpc('get_all_teams_as_admin');
+
+        if (response != null) {
+          return (response as List)
+              .map((team) => Map<String, dynamic>.from(team))
+              .toList();
+        }
+      } catch (rpcError) {
+        print('Error en RPC, usando fallback: $rpcError');
+      }
+
+      // Fallback: consulta directa
       final response = await _client
           .from('teams')
-          .select('id, name, description, users_id, is_active')
+          .select(
+            'id, name, description, leader_id, users_id, is_active, created_at, updated_at',
+          )
           .order('name', ascending: true);
 
       final processedTeams = <Map<String, dynamic>>[];
@@ -264,16 +383,36 @@ class AdminService {
         final List<dynamic> userIds = teamData['users_id'] ?? [];
 
         List<UserProfile> members = [];
+        String? leaderName;
+
         if (userIds.isNotEmpty) {
           // Obtener perfiles de esos IDs
-          final membersResponse = await _client
-              .from('user_profiles')
-              .select('id, full_name, email, role, is_active')
-              .inFilter('id', userIds);
+          try {
+            final membersResponse = await _client
+                .from('user_profiles')
+                .select('id, full_name, email, role, is_active')
+                .inFilter('id', userIds);
 
-          members = membersResponse
-              .map<UserProfile>((json) => UserProfile.fromJson(json))
-              .toList();
+            members = membersResponse
+                .map<UserProfile>((json) => UserProfile.fromJson(json))
+                .toList();
+          } catch (e) {
+            print('Error obteniendo miembros del equipo ${teamData['id']}: $e');
+          }
+        }
+
+        // Obtener nombre del líder
+        if (teamData['leader_id'] != null) {
+          try {
+            final leaderResponse = await _client
+                .from('user_profiles')
+                .select('full_name')
+                .eq('id', teamData['leader_id'])
+                .single();
+            leaderName = leaderResponse['full_name'];
+          } catch (e) {
+            print('Error obteniendo líder del equipo ${teamData['id']}: $e');
+          }
         }
 
         // Contar miembros activos
@@ -281,6 +420,8 @@ class AdminService {
 
         // Agregar info calculada
         teamData['members'] = members;
+        teamData['leader_name'] = leaderName;
+        teamData['member_count'] = activeMembersCount;
         teamData['active_members_count'] = activeMembersCount;
 
         processedTeams.add(teamData);
@@ -570,6 +711,45 @@ class AdminService {
     } catch (e) {
       print('Error al cambiar estado del equipo: $e');
       return false;
+    }
+  }
+
+  // Obtener usuarios disponibles para ser líderes
+  static Future<List<UserProfile>> getAvailableLeaders() async {
+    try {
+      // Verificar si el usuario actual es admin
+      final isAdmin = await isCurrentUserAdmin();
+      if (!isAdmin) {
+        print('Usuario no autorizado para ver usuarios disponibles');
+        return [];
+      }
+
+      // Usar función RPC para obtener usuarios disponibles
+      try {
+        final response = await _client.rpc('get_available_leaders_as_admin');
+
+        if (response != null) {
+          return (response as List)
+              .map<UserProfile>((json) => UserProfile.fromJson(json))
+              .toList();
+        }
+      } catch (rpcError) {
+        print('Error en RPC para líderes, usando fallback: $rpcError');
+      }
+
+      // Fallback: consulta directa
+      final response = await _client
+          .from('user_profiles')
+          .select('*')
+          .eq('is_active', true)
+          .order('full_name', ascending: true);
+
+      return response
+          .map<UserProfile>((json) => UserProfile.fromJson(json))
+          .toList();
+    } catch (e) {
+      print('Error al obtener usuarios disponibles para líderes: $e');
+      return [];
     }
   }
 }

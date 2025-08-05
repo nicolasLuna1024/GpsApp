@@ -4,7 +4,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import '../bloc/admin_bloc.dart';
 import '../models/user_profile.dart';
 import '../models/user_location.dart';
-import '../widgets/team_members_dialog.dart';
+import '../widgets/create_user_dialog.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -86,10 +86,16 @@ class _AdminScreenState extends State<AdminScreen>
               backgroundColor: Colors.green,
               textColor: Colors.white,
             );
-            context.read<AdminBloc>().add(AdminLoadTeams());
-            context.read<AdminBloc>().add(AdminLoadUsers());
-            context.read<AdminBloc>().add(AdminLoadStats());
-            context.read<AdminBloc>().add(AdminLoadActiveLocations());
+            // Recargar datos después del éxito
+            Future.delayed(const Duration(milliseconds: 600), () {
+              if (mounted) {
+                context.read<AdminBloc>()
+                  ..add(AdminLoadUsers())
+                  ..add(AdminLoadStats())
+                  ..add(AdminLoadTeams())
+                  ..add(AdminLoadActiveLocations());
+              }
+            });
           }
         },
         child: TabBarView(
@@ -613,257 +619,14 @@ class _AdminScreenState extends State<AdminScreen>
   }
 
   void _showCreateUserDialog(BuildContext context) {
-    final formKey = GlobalKey<FormState>();
-    final emailController = TextEditingController();
-    final passwordController = TextEditingController();
-    final fullNameController = TextEditingController();
-    String selectedRole = 'topografo';
-    String? selectedTeamId;
-
     // Obtener el BLoC del contexto actual
     final adminBloc = context.read<AdminBloc>();
 
     showDialog(
       context: context,
-      builder: (dialogContext) => BlocProvider.value(
-        value: adminBloc,
-        child: BlocListener<AdminBloc, AdminState>(
-          listener: (context, state) {
-            if (state is AdminSuccess) {
-              // Limpiar controladores antes de cerrar
-              emailController.dispose();
-              passwordController.dispose();
-              fullNameController.dispose();
-              Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(state.message),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            } else if (state is AdminError) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(state.message),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          },
-          child: StatefulBuilder(
-            builder: (context, setState) => AlertDialog(
-              title: const Row(
-                children: [
-                  Icon(Icons.person_add, color: Colors.blue),
-                  SizedBox(width: 8),
-                  Text('Crear Nuevo Usuario'),
-                ],
-              ),
-              content: SizedBox(
-                width: double.maxFinite,
-                child: Form(
-                  key: formKey,
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Nombre completo
-                        TextFormField(
-                          controller: fullNameController,
-                          decoration: const InputDecoration(
-                            labelText: 'Nombre Completo',
-                            prefixIcon: Icon(Icons.person),
-                            border: OutlineInputBorder(),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'El nombre es requerido';
-                            }
-                            if (value.trim().length < 2) {
-                              return 'El nombre debe tener al menos 2 caracteres';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Email
-                        TextFormField(
-                          controller: emailController,
-                          decoration: const InputDecoration(
-                            labelText: 'Correo Electrónico',
-                            prefixIcon: Icon(Icons.email),
-                            border: OutlineInputBorder(),
-                          ),
-                          keyboardType: TextInputType.emailAddress,
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'El email es requerido';
-                            }
-                            if (!RegExp(
-                              r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                            ).hasMatch(value)) {
-                              return 'Ingresa un email válido';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Contraseña
-                        TextFormField(
-                          controller: passwordController,
-                          decoration: const InputDecoration(
-                            labelText: 'Contraseña',
-                            prefixIcon: Icon(Icons.lock),
-                            border: OutlineInputBorder(),
-                          ),
-                          obscureText: true,
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'La contraseña es requerida';
-                            }
-                            if (value.length < 6) {
-                              return 'La contraseña debe tener al menos 6 caracteres';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Rol
-                        DropdownButtonFormField<String>(
-                          value: selectedRole,
-                          decoration: const InputDecoration(
-                            labelText: 'Rol del Usuario',
-                            prefixIcon: Icon(Icons.admin_panel_settings),
-                            border: OutlineInputBorder(),
-                          ),
-                          items: const [
-                            DropdownMenuItem(
-                              value: 'topografo',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.location_on, color: Colors.green),
-                                  SizedBox(width: 8),
-                                  Text('Topógrafo'),
-                                ],
-                              ),
-                            ),
-                            DropdownMenuItem(
-                              value: 'admin',
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.admin_panel_settings,
-                                    color: Colors.red,
-                                  ),
-                                  SizedBox(width: 8),
-                                  Text('Administrador'),
-                                ],
-                              ),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              selectedRole = value!;
-                            });
-                          },
-                          validator: (value) {
-                            if (value == null) {
-                              return 'Selecciona un rol';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Información adicional
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.blue[50],
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.blue[200]!),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Row(
-                                children: [
-                                  Icon(
-                                    Icons.info,
-                                    color: Colors.blue,
-                                    size: 16,
-                                  ),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    'Información sobre roles:',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                '• Topógrafo: Puede mapear terrenos y ver sus propios datos',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.blue,
-                                ),
-                              ),
-                              const Text(
-                                '• Administrador: Acceso completo al sistema',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.blue,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    emailController.dispose();
-                    passwordController.dispose();
-                    fullNameController.dispose();
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text('Cancelar'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    if (formKey.currentState!.validate()) {
-                      context.read<AdminBloc>().add(
-                        AdminCreateUser(
-                          email: emailController.text.trim(),
-                          password: passwordController.text,
-                          fullName: fullNameController.text.trim(),
-                          role: selectedRole,
-                          teamId: selectedTeamId,
-                        ),
-                      );
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Crear Usuario'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      barrierDismissible: false,
+      builder: (dialogContext) =>
+          BlocProvider.value(value: adminBloc, child: const CreateUserDialog()),
     );
   }
 
@@ -1199,6 +962,12 @@ class _AdminScreenState extends State<AdminScreen>
               List<UserProfile> users = [];
               if (state is AdminLoaded) {
                 users = state.users.where((user) => user.isActive).toList();
+              }
+
+              // Si no hay usuarios cargados, cargar desde el servicio
+              if (users.isEmpty) {
+                // Triggear la carga de usuarios si no están disponibles
+                context.read<AdminBloc>().add(AdminLoadUsers());
               }
 
               if (selectedLeaderId != null &&
@@ -1889,11 +1658,7 @@ class _AdminScreenState extends State<AdminScreen>
               // Variables desde el Bloc
               List<UserProfile> availableUsers = [];
               List<UserProfile> teamMembers = [];
-              bool isProcessing = false;
 
-              if (state is AdminLoading) {
-                isProcessing = true;
-              }
               if (state is AdminLoaded) {
                 availableUsers = state.availableUsers;
                 teamMembers = state.teamMembers;

@@ -3,7 +3,6 @@ class UserProfile {
   final String email;
   final String? fullName;
   final String role;
-  final String? teamId;
   final bool isActive;
   final String? avatarUrl;
   final DateTime createdAt;
@@ -14,7 +13,6 @@ class UserProfile {
     required this.email,
     this.fullName,
     this.role = 'topografo',
-    this.teamId,
     this.isActive = true,
     this.avatarUrl,
     required this.createdAt,
@@ -27,7 +25,6 @@ class UserProfile {
       email: json['email']?.toString() ?? 'Sin correo',
       fullName: json['full_name']?.toString(),
       role: json['role']?.toString() ?? 'topografo',
-      teamId: json['team_id']?.toString(),
       isActive: json['is_active'] ?? true,
       avatarUrl: json['avatar_url']?.toString(),
       createdAt: json['created_at'] != null
@@ -45,7 +42,6 @@ class UserProfile {
       'email': email,
       'full_name': fullName,
       'role': role,
-      'team_id': teamId,
       'is_active': isActive,
       'avatar_url': avatarUrl,
       'created_at': createdAt.toIso8601String(),
@@ -58,7 +54,6 @@ class UserProfile {
     String? email,
     String? fullName,
     String? role,
-    String? teamId,
     bool? isActive,
     String? avatarUrl,
     DateTime? createdAt,
@@ -69,7 +64,6 @@ class UserProfile {
       email: email ?? this.email,
       fullName: fullName ?? this.fullName,
       role: role ?? this.role,
-      teamId: teamId ?? this.teamId,
       isActive: isActive ?? this.isActive,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       createdAt: createdAt ?? this.createdAt,

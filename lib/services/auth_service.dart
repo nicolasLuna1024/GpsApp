@@ -25,9 +25,7 @@ class AuthService {
       final response = await _client.auth.signUp(
         email: email,
         password: password,
-        data: {
-          'full_name': fullName
-          },
+        data: {'full_name': fullName},
       );
 
       if (response.user != null) {
@@ -51,7 +49,6 @@ class AuthService {
         email: email,
         password: password,
       );
-
 
       if (response.user != null) {
         // Verificar si el usuario está activo en nuestra base de datos
@@ -113,14 +110,12 @@ class AuthService {
     required String userId,
     String? fullName,
     String? role,
-    String? teamId,
   }) async {
     try {
       final updates = <String, dynamic>{};
 
       if (fullName != null) updates['full_name'] = fullName;
       if (role != null) updates['role'] = role;
-      if (teamId != null) updates['team_id'] = teamId;
 
       if (updates.isNotEmpty) {
         updates['updated_at'] = DateTime.now().toIso8601String();
@@ -191,16 +186,32 @@ class AuthService {
     try {
       if (!isAuthenticated) return [];
 
-      final currentProfile = await getCurrentUserProfile();
-      if (currentProfile?.teamId == null) return [];
-
-      final response = await _client
-          .from('user_profiles')
-          .select()
-          .eq('team_id', currentProfile!.teamId!)
+      // Buscar equipos donde el usuario actual está incluido en users_id
+      final teamsResponse = await _client
+          .from('teams')
+          .select('users_id')
+          .contains('users_id', [currentUser!.id])
           .eq('is_active', true);
 
-      return response
+      if (teamsResponse.isEmpty) return [];
+
+      // Obtener todos los IDs de usuarios de todos los equipos del usuario
+      final Set<String> allTeamMemberIds = <String>{};
+      for (final team in teamsResponse) {
+        final List<dynamic> userIds = team['users_id'] ?? [];
+        allTeamMemberIds.addAll(userIds.map((id) => id.toString()));
+      }
+
+      if (allTeamMemberIds.isEmpty) return [];
+
+      // Obtener perfiles de todos los miembros del equipo
+      final membersResponse = await _client
+          .from('user_profiles')
+          .select('*')
+          .inFilter('id', allTeamMemberIds.toList())
+          .eq('is_active', true);
+
+      return membersResponse
           .map<UserProfile>((json) => UserProfile.fromJson(json))
           .toList();
     } catch (e) {
