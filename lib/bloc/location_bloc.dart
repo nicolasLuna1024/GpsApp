@@ -12,6 +12,10 @@ class LocationStartTracking extends LocationEvent {}
 
 class LocationStopTracking extends LocationEvent {}
 
+class LocationStopAllTracking extends LocationEvent {}
+
+class LocationStartVisualTracking extends LocationEvent {}
+
 class LocationUpdateRequested extends LocationEvent {}
 
 class LocationTeamMembersRequested extends LocationEvent {}
@@ -92,6 +96,8 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
     on<LocationPermissionRequested>(_onPermissionRequested);
     on<LocationStartTracking>(_onStartTracking);
     on<LocationStopTracking>(_onStopTracking);
+    on<LocationStopAllTracking>(_onStopAllTracking);
+    on<LocationStartVisualTracking>(_onStartVisualTracking);
     on<LocationUpdateRequested>(_onUpdateRequested);
     on<LocationTeamMembersRequested>(_onTeamMembersRequested);
     on<LocationCollaborativeSessionMembersRequested>(
@@ -291,15 +297,76 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
             ? await LocationService.getCollaborativeSessionLocations(activeSessionId)
             : await LocationService.getTeamLocations();
 
-        // Mantener el tracking visual
-        if (_visualTrackingSubscription == null) {
-          _startVisualTracking();
-        }
+        // No mantener automáticamente el visual tracking
+        // Se puede reactivar manualmente si es necesario
 
         emit(LocationUpdated(position: position, teamLocations: teamLocations));
       }
     } catch (e) {
       emit(LocationError('Error al detener tracking: $e'));
+    }
+  }
+
+  // Detener completamente todo el tracking (BD, background, visual)
+  Future<void> _onStopAllTracking(
+    LocationStopAllTracking event,
+    Emitter<LocationState> emit,
+  ) async {
+    try {
+      // Usar el nuevo método de LocationService
+      await LocationService.stopAllLocationTracking();
+      
+      // Actualizar estado interno
+      _isTracking = false;
+      
+      // Cancelar todos los timers
+      _dbSaveTimer?.cancel();
+      _trackingUpdateTimer?.cancel();
+      
+      // Detener visual tracking también
+      _stopVisualTracking();
+      
+      // Emitir estado inicial limpio
+      emit(LocationInitial());
+      
+      print('Todo el tracking detenido completamente');
+    } catch (e) {
+      emit(LocationError('Error al detener todo el tracking: $e'));
+    }
+  }
+
+  // Iniciar solo visual tracking
+  Future<void> _onStartVisualTracking(
+    LocationStartVisualTracking event,
+    Emitter<LocationState> emit,
+  ) async {
+    try {
+      final permission = await Geolocator.checkPermission();
+      if (permission != LocationPermission.always) {
+        emit(LocationAlwaysPermission());
+        return;
+      }
+
+      // Iniciar visual tracking si no está activo
+      if (_visualTrackingSubscription == null) {
+        _startVisualTracking();
+      }
+
+      // Obtener posición actual y emitir estado
+      final position = await LocationService.getCurrentLocation();
+      if (position != null) {
+        final activeSessionId = LocationService.getActiveCollaborativeSession();
+        
+        final teamLocations = activeSessionId != null
+            ? await LocationService.getCollaborativeSessionLocations(activeSessionId)
+            : await LocationService.getTeamLocations();
+
+        emit(LocationUpdated(position: position, teamLocations: teamLocations));
+      }
+
+      print('Visual tracking iniciado');
+    } catch (e) {
+      emit(LocationError('Error al iniciar visual tracking: $e'));
     }
   }
 
@@ -323,10 +390,8 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
             ? await LocationService.getCollaborativeSessionLocations(activeSessionId)
             : await LocationService.getTeamLocations();
 
-        // Si no está haciendo tracking con BD, asegurar que el visual esté activo
-        if (!_isTracking && _visualTrackingSubscription == null) {
-          _startVisualTracking();
-        }
+        // Solo iniciar visual tracking si se solicita explícitamente
+        // No auto-reiniciar para evitar tracking no deseado
 
         emit(LocationUpdated(position: position, teamLocations: teamLocations));
       }

@@ -99,10 +99,17 @@ class _MapScreenState extends State<MapScreen> {
     _stopIconUpdateTimer();
     _collaborativePointsSubscription?.cancel();
     _collaborativePollingTimer?.cancel();
-    // Timer de BD se maneja desde LocationBloc
-
-    // Desactivar todas las ubicaciones activas del usuario al salir
-    LocationService.deactivateUserLocations();
+    
+    // Detener completamente todo el tracking al salir
+    // Usar directamente LocationService para evitar problemas con context en dispose()
+    LocationService.stopAllLocationTracking();
+    
+    // Limpiar estado colaborativo local
+    _collaborativePoints.clear();
+    _isCollaborativeMode = false;
+    _terrainPoints.clear();
+    _isAddingPoints = false;
+    
     super.dispose();
   }
 
@@ -124,8 +131,8 @@ class _MapScreenState extends State<MapScreen> {
             ElevatedButton(
               onPressed: () {
                 Navigator.of(context).pop(true);
-                // Detener tracking
-                _stopTracking();
+                // Detener completamente todo el tracking al salir forzadamente
+                context.read<LocationBloc>().add(LocationStopAllTracking());
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red[600],
@@ -1181,10 +1188,25 @@ class _MapScreenState extends State<MapScreen> {
 
   // Timer de BD eliminado - se maneja desde LocationBloc
 
-  // Método para detener tracking
+  // Método para detener tracking (mantiene visual tracking)
   void _stopTracking() {
     context.read<LocationBloc>().add(LocationStopTracking());
     print('Tracking detenido');
+  }
+
+  // Método para detener completamente todo el tracking
+  void _stopAllTracking() {
+    context.read<LocationBloc>().add(LocationStopAllTracking());
+    
+    // Limpiar estado colaborativo local
+    setState(() {
+      _collaborativePoints.clear();
+      _isCollaborativeMode = false;
+      _terrainPoints.clear();
+      _isAddingPoints = false;
+    });
+    
+    print('Todo el tracking detenido completamente');
   }
 
   void _centerOnCurrentLocation() {

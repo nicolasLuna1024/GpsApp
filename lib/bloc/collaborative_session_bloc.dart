@@ -222,7 +222,7 @@ class CollaborativeSessionBloc
         // Limpiar sesión activa si es la que se está finalizando
         final currentActiveSession = LocationService.getActiveCollaborativeSession();
         if (currentActiveSession == event.sessionId) {
-          LocationService.setActiveCollaborativeSession(null);
+          LocationService.clearCollaborativeSession();
           print('Sesión activa limpiada: ${event.sessionId}');
         }
         

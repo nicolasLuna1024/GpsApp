@@ -29,6 +29,12 @@ class LocationService {
     return _activeCollaborativeSessionId;
   }
 
+  // Limpiar completamente el estado de sesión colaborativa
+  static void clearCollaborativeSession() {
+    _activeCollaborativeSessionId = null;
+    print('LocationService: Collaborative session state cleared');
+  }
+
   // Método para obtener sesión activa desde el BLoC global
   static String? _getCurrentCollaborativeSessionId() {
     try {
@@ -226,6 +232,23 @@ class LocationService {
     _locationUpdateTimer = null;
 
     print('Tracking de ubicación detenido');
+  }
+
+  // Detener completamente todo el tracking (BD + background + visual)
+  static Future<void> stopAllLocationTracking() async {
+    // Detener tracking principal
+    stopLocationTracking();
+    
+    // Detener tracking de background
+    await stopBackgroundLocationTracking();
+    
+    // Limpiar sesión colaborativa
+    clearCollaborativeSession();
+    
+    // Desactivar ubicaciones del usuario
+    await deactivateUserLocations();
+    
+    print('Todo el tracking de ubicación detenido completamente');
   }
 
   // Guardar ubicación en la base de datos
