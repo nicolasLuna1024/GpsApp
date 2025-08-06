@@ -211,3 +211,41 @@ SELECT
 FROM public.user_profiles 
 WHERE role = 'admin';
 */
+
+-- Crear versión sin parámetros que devuelve todos los puntos colaborativos
+CREATE OR REPLACE FUNCTION public.get_collaborative_terrain_points()
+RETURNS TABLE (
+    point_id UUID,
+    user_id UUID,
+    user_full_name TEXT,
+    point_number INTEGER,
+    latitude DECIMAL(10, 8),
+    longitude DECIMAL(11, 8),
+    altitude DECIMAL(8, 3),
+    accuracy DECIMAL(8, 3),
+    created_at TIMESTAMP WITH TIME ZONE,
+    collaborative_session_id UUID
+)
+SECURITY DEFINER
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        ctp.id as point_id,
+        ctp.user_id,
+        COALESCE(up.full_name, up.email) as user_full_name,
+        ctp.point_number,
+        ctp.latitude,
+        ctp.longitude,
+        ctp.altitude,
+        ctp.accuracy,
+        ctp.created_at,
+        ctp.collaborative_session_id
+    FROM public.collaborative_terrain_points ctp
+    INNER JOIN public.user_profiles up ON ctp.user_id = up.id
+    WHERE ctp.is_active = true
+    ORDER BY ctp.created_at DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+GRANT EXECUTE ON FUNCTION public.get_collaborative_terrain_points() TO authenticated;
