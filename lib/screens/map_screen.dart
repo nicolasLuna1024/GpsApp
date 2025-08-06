@@ -16,12 +16,7 @@ import '../services/collaborative_terrain_service.dart';
 import '../models/collaborative_terrain_point.dart';
 import '../bloc/collaborative_session_bloc.dart';
 
-
-
-
-
 const String isolateName = 'LocatorIsolate';
-
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -31,24 +26,23 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  
   final MapController _mapController = MapController();
   final TextEditingController _terrainNameController = TextEditingController();
-  final TextEditingController _terrainDescriptionController = TextEditingController();
+  final TextEditingController _terrainDescriptionController =
+      TextEditingController();
 
   double _currentZoom = 15.0;
   LatLng _currentCenter = const LatLng(0, 0);
   bool _hasCenteredOnce = false;
-  
+
   // Variables para manejo de puntos del terreno
   List<TerrainPoint> _terrainPoints = [];
   List<CollaborativeTerrainPoint> _collaborativePoints = [];
   bool _isAddingPoints = false;
   bool _isCollaborativeMode = false;
-  StreamSubscription<List<CollaborativeTerrainPoint>>? _collaborativePointsSubscription;
+  StreamSubscription<List<CollaborativeTerrainPoint>>?
+  _collaborativePointsSubscription;
   Timer? _collaborativePollingTimer;
-  
-
 
   void _initialMapCenter(Position nuevoCentro) {
     final nuevaUbicacion = LatLng(nuevoCentro.latitude, nuevoCentro.longitude);
@@ -72,27 +66,26 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-
   @override
   void initState() {
     super.initState();
     // Solicitar permisos y empezar tracking al cargar la pantalla
     context.read<LocationBloc>().add(LocationPermissionRequested());
-    
+
     // Cargar ubicaciones del equipo o sesión colaborativa
     Future.delayed(Duration(milliseconds: 500), () {
       _loadTeamOrSessionLocations();
       _initializeCollaborativeMode();
     });
-    
+
     // Recargar modo colaborativo periódicamente como respaldo
     Future.delayed(Duration(milliseconds: 3000), () {
       if (mounted) {
         _initializeCollaborativeMode();
       }
     });
-    
-    _mapController.mapEventStream.listen((event){
+
+    _mapController.mapEventStream.listen((event) {
       setState(() {
         _currentZoom = event.camera.zoom;
       });
@@ -154,277 +147,283 @@ class _MapScreenState extends State<MapScreen> {
       onWillPop: _onWillPop,
       child: Scaffold(
         appBar: AppBar(
-        title: const Text(
-          'Mapa en Tiempo Real',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+          title: const Text(
+            'Mapa en Tiempo Real',
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          backgroundColor: Colors.green[600],
+          elevation: 0,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh, color: Colors.white),
+              onPressed: () {
+                context.read<LocationBloc>().add(LocationUpdateRequested());
+                _loadTeamOrSessionLocations();
+                _refreshCollaborativePoints();
+                // Reinicializar modo colaborativo
+                Future.delayed(Duration(milliseconds: 500), () {
+                  if (mounted) {
+                    _initializeCollaborativeMode();
+                  }
+                });
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.my_location, color: Colors.white),
+              onPressed: _centerOnCurrentLocation,
+            ),
+            // Debug button - remover después de probar
+            IconButton(
+              icon: const Icon(Icons.bug_report, color: Colors.white),
+              onPressed: _showDebugInfo,
+            ),
+          ],
         ),
-        backgroundColor: Colors.green[600],
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: () {
-              context.read<LocationBloc>().add(LocationUpdateRequested());
-              _loadTeamOrSessionLocations();
-              _refreshCollaborativePoints();
-              // Reinicializar modo colaborativo
-              Future.delayed(Duration(milliseconds: 500), () {
-                if (mounted) {
-                  _initializeCollaborativeMode();
+        body: MultiBlocListener(
+          listeners: [
+            BlocListener<LocationBloc, LocationState>(
+              listener: (context, state) {
+                if (state is LocationPermissionDenied) {
+                  Fluttertoast.showToast(
+                    msg: state.message,
+                    toastLength: Toast.LENGTH_LONG,
+                    gravity: ToastGravity.BOTTOM,
+                    backgroundColor: Colors.red,
+                    textColor: Colors.white,
+                  );
+                  showDialog(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      title: Text('Permiso requerido'),
+                      content: Text(
+                        'Para que la app funcione en segundo plano, debes otorgar el permiso "Permitir todo el tiempo" en la configuración de la app.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+
+                            if (Navigator.canPop(context)) {
+                              Navigator.pop(context);
+                            }
+                          },
+                          child: Text('Cancelar'),
+                        ),
+                        TextButton(
+                          onPressed: () async {
+                            Navigator.pop(context);
+                            await Geolocator.openAppSettings();
+                          },
+                          child: Text('Abrir configuración'),
+                        ),
+                      ],
+                    ),
+                  );
+                } else if (state is LocationError) {
+                  Fluttertoast.showToast(
+                    msg: state.message,
+                    toastLength: Toast.LENGTH_LONG,
+                    gravity: ToastGravity.BOTTOM,
+                    backgroundColor: Colors.red,
+                    textColor: Colors.white,
+                  );
+                } else if (state is LocationTrackingActive &&
+                    !_hasCenteredOnce) {
+                  _initialMapCenter(state.currentPosition);
+                  setState(() {
+                    _hasCenteredOnce = true;
+                  });
+                  // Iniciar timer para actualizaciones periódicas del ícono
+                  if (_iconUpdateTimer == null) {
+                    _startIconUpdateTimer();
+                  }
+                } else if (state is LocationUpdated && !_hasCenteredOnce) {
+                  // Primera vez: centrar cámara en la ubicación actual
+                  _initialMapCenter(state.position);
+                  setState(() {
+                    _hasCenteredOnce = true;
+                  });
+                  // Iniciar timer para actualizaciones periódicas del ícono
+                  if (_iconUpdateTimer == null) {
+                    _startIconUpdateTimer();
+                  }
+                } else if (state is LocationUpdated) {
+                  // Solo actualizar ícono cuando no hay tracking activo (ya centrado)
+                  _updateIconOnly(state.position);
+                  // Iniciar timer para actualizaciones periódicas del ícono si no existe
+                  if (_iconUpdateTimer == null) {
+                    _startIconUpdateTimer();
+                  }
+                } else if (state is LocationTrackingActive) {
+                  // Actualizar ícono y cámara durante el tracking
+                  _updateMapCenter(state.currentPosition);
+                  // Iniciar timer para actualizaciones periódicas del ícono si no existe
+                  if (_iconUpdateTimer == null) {
+                    _startIconUpdateTimer();
+                  }
+                  // Timer de BD se maneja desde LocationBloc, no desde MapScreen
+                } else if (state is LocationAlwaysPermission) {
+                  showDialog(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      title: Text('Permiso requerido'),
+                      content: Text(
+                        'Para que la app funcione en segundo plano, debes otorgar el permiso "Permitir todo el tiempo" en la configuración de la app.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+
+                            if (Navigator.canPop(context)) {
+                              Navigator.pop(context);
+                            }
+                          },
+                          child: Text('Cancelar'),
+                        ),
+                        TextButton(
+                          onPressed: () async {
+                            Navigator.pop(context);
+                            await Geolocator.openAppSettings();
+                          },
+                          child: Text('Abrir configuración'),
+                        ),
+                      ],
+                    ),
+                  );
                 }
-              });
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.my_location, color: Colors.white),
-            onPressed: _centerOnCurrentLocation,
-          ),
-          // Debug button - remover después de probar
-          IconButton(
-            icon: const Icon(Icons.bug_report, color: Colors.white),
-            onPressed: _showDebugInfo,
-          ),
-        ],
-      ),
-      body: MultiBlocListener(
-        listeners: [
-          BlocListener<LocationBloc, LocationState>(
-            listener: (context, state) {
-          if (state is LocationPermissionDenied) {
-            Fluttertoast.showToast(
-              msg: state.message,
-              toastLength: Toast.LENGTH_LONG,
-              gravity: ToastGravity.BOTTOM,
-              backgroundColor: Colors.red,
-              textColor: Colors.white,
-            );
-            showDialog(
-              context: context,
-              builder: (_) => AlertDialog(
-                title: Text('Permiso requerido'),
-                content: Text(
-                    'Para que la app funcione en segundo plano, debes otorgar el permiso "Permitir todo el tiempo" en la configuración de la app.'),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-
-                      if (Navigator.canPop(context)) {
-                        Navigator.pop(context);
-                      }
-                    },
-                    child: Text('Cancelar'),
+              },
+            ),
+            BlocListener<CollaborativeSessionBloc, CollaborativeSessionState>(
+              listener: (context, state) {
+                if (state is CollaborativeSessionJoined) {
+                  print('Sesión colaborativa unida, reinicializando modo...');
+                  Future.delayed(Duration(milliseconds: 500), () {
+                    if (mounted) {
+                      _initializeCollaborativeMode();
+                    }
+                  });
+                } else if (state is CollaborativeSessionOperationSuccess) {
+                  print('Operación de sesión exitosa, reinicializando modo...');
+                  Future.delayed(Duration(milliseconds: 500), () {
+                    if (mounted) {
+                      _initializeCollaborativeMode();
+                    }
+                  });
+                }
+              },
+            ),
+          ],
+          child: BlocBuilder<LocationBloc, LocationState>(
+            builder: (context, state) {
+              if (state is LocationLoading) {
+                return const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text(
+                        'Obteniendo ubicación...',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                    ],
                   ),
-                  TextButton(
-                    onPressed: () async {
-                      Navigator.pop(context);
-                      await Geolocator.openAppSettings();
-                    },
-                    child: Text('Abrir configuración'),
-                  ),
-                ],
-              ),
-            );
-          } else if (state is LocationError) {
-            Fluttertoast.showToast(
-              msg: state.message,
-              toastLength: Toast.LENGTH_LONG,
-              gravity: ToastGravity.BOTTOM,
-              backgroundColor: Colors.red,
-              textColor: Colors.white,
-            );
-          } else if (state is LocationTrackingActive && !_hasCenteredOnce) {
-            _initialMapCenter(state.currentPosition);
-            setState(() {
-              _hasCenteredOnce = true;
-            });
-            // Iniciar timer para actualizaciones periódicas del ícono
-            if (_iconUpdateTimer == null) {
-              _startIconUpdateTimer();
-            }
-          } else if (state is LocationUpdated && !_hasCenteredOnce) {
-            // Primera vez: centrar cámara en la ubicación actual
-            _initialMapCenter(state.position);
-            setState(() {
-              _hasCenteredOnce = true;
-            });
-            // Iniciar timer para actualizaciones periódicas del ícono
-            if (_iconUpdateTimer == null) {
-              _startIconUpdateTimer();
-            }
-          } else if (state is LocationUpdated) {
-            // Solo actualizar ícono cuando no hay tracking activo (ya centrado)
-            _updateIconOnly(state.position);
-            // Iniciar timer para actualizaciones periódicas del ícono si no existe
-            if (_iconUpdateTimer == null) {
-              _startIconUpdateTimer();
-            }
-          } else if (state is LocationTrackingActive) {
-            // Actualizar ícono y cámara durante el tracking
-            _updateMapCenter(state.currentPosition);
-            // Iniciar timer para actualizaciones periódicas del ícono si no existe
-            if (_iconUpdateTimer == null) {
-              _startIconUpdateTimer();
-            }
-            // Timer de BD se maneja desde LocationBloc, no desde MapScreen
-          }
-          else if (state is LocationAlwaysPermission) {
-            showDialog(
-              context: context,
-              builder: (_) => AlertDialog(
-                title: Text('Permiso requerido'),
-                content: Text(
-                    'Para que la app funcione en segundo plano, debes otorgar el permiso "Permitir todo el tiempo" en la configuración de la app.'),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-
-                      if (Navigator.canPop(context)) {
-                        Navigator.pop(context);
-                      }
-                    },
-                    child: Text('Cancelar'),
-                  ),
-                  TextButton(
-                    onPressed: () async {
-                      Navigator.pop(context);
-                      await Geolocator.openAppSettings();
-                    },
-                    child: Text('Abrir configuración'),
-                  ),
-                ],
-              ),
-            );
-          }
-        },
-          ),
-          BlocListener<CollaborativeSessionBloc, CollaborativeSessionState>(
-            listener: (context, state) {
-              if (state is CollaborativeSessionJoined) {
-                print('Sesión colaborativa unida, reinicializando modo...');
-                Future.delayed(Duration(milliseconds: 500), () {
-                  if (mounted) {
-                    _initializeCollaborativeMode();
-                  }
-                });
-              } else if (state is CollaborativeSessionOperationSuccess) {
-                print('Operación de sesión exitosa, reinicializando modo...');
-                Future.delayed(Duration(milliseconds: 500), () {
-                  if (mounted) {
-                    _initializeCollaborativeMode();
-                  }
-                });
+                );
               }
-            },
-          ),
-        ],
-        child: BlocBuilder<LocationBloc, LocationState>(
-          builder:
-           (context, state) {
-            if (state is LocationLoading) {
-              return const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 16),
-                    Text(
-                      'Obteniendo ubicación...',
-                      style: TextStyle(fontSize: 16),
+              return Stack(
+                children: [
+                  // Mapa
+                  FlutterMap(
+                    mapController: _mapController,
+                    options: MapOptions(
+                      initialCenter: LatLng(0.0, 0.0),
+                      initialZoom: _currentZoom,
+                      maxZoom: 20.0,
+                      minZoom: 3.0,
                     ),
-                  ],
-                ),
-              );
-            }
-            return Stack(
-              children: [
-                // Mapa
-                FlutterMap(
-                  mapController: _mapController,
-                  options: MapOptions(
-                    initialCenter: LatLng(0.0, 0.0),
-                    initialZoom: _currentZoom,
-                    maxZoom: 20.0,
-                    minZoom: 3.0,
-                  ),
-                  children: [
-                    // Capa de tiles de OpenStreetMap
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.example.app_final',
-                    ),
-                    
-                    // Polígono del terreno (individual o colaborativo)
-                    if (_isCollaborativeMode && _collaborativePoints.length >= 3)
-                      PolygonLayer(
-                        polygons: [
-                          Polygon(
-                            points: _orderedCollaborativePoints
-                                .map((p) => LatLng(p.latitude, p.longitude))
-                                .toList(),
-                            color: Colors.green.withOpacity(0.3),
-                            borderColor: Colors.green,
-                            borderStrokeWidth: 2,
-                          ),
-                        ],
-                      )
-                    else if (!_isCollaborativeMode && _terrainPoints.length >= 3)
-                      PolygonLayer(
-                        polygons: [
-                          Polygon(
-                            points: _orderedTerrainPoints
-                                .map((p) => LatLng(p.latitude, p.longitude))
-                                .toList(),
-                            color: Colors.purple.withOpacity(0.3),
-                            borderColor: Colors.purple,
-                            borderStrokeWidth: 2,
-                          ),
-                        ],
+                    children: [
+                      // Capa de tiles de OpenStreetMap
+                      TileLayer(
+                        urlTemplate:
+                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName: 'com.example.app_final',
                       ),
 
-                    // Líneas conectando los puntos del terreno (individual o colaborativo)
-                    if (_isCollaborativeMode && _collaborativePoints.length >= 2)
-                      PolylineLayer(
-                        polylines: [
-                          Polyline(
-                            points: _orderedCollaborativePoints
-                                .map((p) => LatLng(p.latitude, p.longitude))
-                                .toList(),
-                            color: Colors.green,
-                            strokeWidth: 2,
-                          ),
-                        ],
-                      )
-                    else if (!_isCollaborativeMode && _terrainPoints.length >= 2)
-                      PolylineLayer(
-                        polylines: [
-                          Polyline(
-                            points: _orderedTerrainPoints
-                                .map((p) => LatLng(p.latitude, p.longitude))
-                                .toList(),
-                            color: Colors.purple,
-                            strokeWidth: 2,
-                          ),
-                        ],
-                      ),          
-                    // Marcadores
-                    MarkerLayer(markers: _buildMarkers(state)),
-                  ],
-                ),
+                      // Polígono del terreno (individual o colaborativo)
+                      if (_isCollaborativeMode &&
+                          _collaborativePoints.length >= 3)
+                        PolygonLayer(
+                          polygons: [
+                            Polygon(
+                              points: _orderedCollaborativePoints
+                                  .map((p) => LatLng(p.latitude, p.longitude))
+                                  .toList(),
+                              color: Colors.green.withOpacity(0.3),
+                              borderColor: Colors.green,
+                              borderStrokeWidth: 2,
+                            ),
+                          ],
+                        )
+                      else if (!_isCollaborativeMode &&
+                          _terrainPoints.length >= 3)
+                        PolygonLayer(
+                          polygons: [
+                            Polygon(
+                              points: _orderedTerrainPoints
+                                  .map((p) => LatLng(p.latitude, p.longitude))
+                                  .toList(),
+                              color: Colors.purple.withOpacity(0.3),
+                              borderColor: Colors.purple,
+                              borderStrokeWidth: 2,
+                            ),
+                          ],
+                        ),
 
-                // Panel de información
-                _buildInfoPanel(state),
+                      // Líneas conectando los puntos del terreno (individual o colaborativo)
+                      if (_isCollaborativeMode &&
+                          _collaborativePoints.length >= 2)
+                        PolylineLayer(
+                          polylines: [
+                            Polyline(
+                              points: _orderedCollaborativePoints
+                                  .map((p) => LatLng(p.latitude, p.longitude))
+                                  .toList(),
+                              color: Colors.green,
+                              strokeWidth: 2,
+                            ),
+                          ],
+                        )
+                      else if (!_isCollaborativeMode &&
+                          _terrainPoints.length >= 2)
+                        PolylineLayer(
+                          polylines: [
+                            Polyline(
+                              points: _orderedTerrainPoints
+                                  .map((p) => LatLng(p.latitude, p.longitude))
+                                  .toList(),
+                              color: Colors.purple,
+                              strokeWidth: 2,
+                            ),
+                          ],
+                        ),
+                      // Marcadores
+                      MarkerLayer(markers: _buildMarkers(state)),
+                    ],
+                  ),
 
-                // Botones de control
-                _buildControlButtons(state),
-              ],
-            );
-          },
+                  // Panel de información
+                  _buildInfoPanel(state),
+
+                  // Botones de control
+                  _buildControlButtons(state),
+                ],
+              );
+            },
+          ),
         ),
       ),
-    ));
+    );
   }
 
   List<Marker> _buildMarkers(LocationState state) {
@@ -460,10 +459,13 @@ class _MapScreenState extends State<MapScreen> {
 
       // Marcadores para miembros del equipo (filtrar el usuario actual)
       final currentUser = AuthService.currentUser;
-      final filteredTeamLocations = state.teamLocations.where((location) => 
-        currentUser == null || location.userId != currentUser.id
-      ).toList();
-      
+      final filteredTeamLocations = state.teamLocations
+          .where(
+            (location) =>
+                currentUser == null || location.userId != currentUser.id,
+          )
+          .toList();
+
       for (var location in filteredTeamLocations) {
         markers.add(
           Marker(
@@ -515,9 +517,12 @@ class _MapScreenState extends State<MapScreen> {
 
       // Marcadores para miembros del equipo (filtrar el usuario actual)
       final currentUser = AuthService.currentUser;
-      final filteredTeamLocations = state.teamLocations.where((location) => 
-        currentUser == null || location.userId != currentUser.id
-      ).toList();
+      final filteredTeamLocations = state.teamLocations
+          .where(
+            (location) =>
+                currentUser == null || location.userId != currentUser.id,
+          )
+          .toList();
 
       for (var location in filteredTeamLocations) {
         markers.add(
@@ -551,7 +556,7 @@ class _MapScreenState extends State<MapScreen> {
       for (int i = 0; i < _collaborativePoints.length; i++) {
         final point = _collaborativePoints[i];
         final isOwnPoint = point.userId == AuthService.currentUser?.id;
-        
+
         markers.add(
           Marker(
             point: LatLng(point.latitude, point.longitude),
@@ -566,7 +571,8 @@ class _MapScreenState extends State<MapScreen> {
                   border: Border.all(color: Colors.white, width: 2),
                   boxShadow: [
                     BoxShadow(
-                      color: (isOwnPoint ? Colors.purple : Colors.orange).withOpacity(0.3),
+                      color: (isOwnPoint ? Colors.purple : Colors.orange)
+                          .withOpacity(0.3),
                       blurRadius: 4,
                       spreadRadius: 1,
                     ),
@@ -624,8 +630,6 @@ class _MapScreenState extends State<MapScreen> {
         );
       }
     }
-
-
 
     return markers;
   }
@@ -690,10 +694,14 @@ class _MapScreenState extends State<MapScreen> {
                   builder: (context) {
                     // Filtrar al usuario actual de la lista de compañeros
                     final currentUser = AuthService.currentUser;
-                    final filteredTeammates = teamLocations.where((location) => 
-                      currentUser == null || location.userId != currentUser.id
-                    ).toList();
-                    
+                    final filteredTeammates = teamLocations
+                        .where(
+                          (location) =>
+                              currentUser == null ||
+                              location.userId != currentUser.id,
+                        )
+                        .toList();
+
                     return Text(
                       'Compañeros conectados: ${filteredTeammates.length}',
                       style: TextStyle(
@@ -705,7 +713,7 @@ class _MapScreenState extends State<MapScreen> {
                   },
                 ),
               ],
-              
+
               // Información del terreno (individual o colaborativo)
               if (_isCollaborativeMode && _collaborativePoints.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -755,7 +763,8 @@ class _MapScreenState extends State<MapScreen> {
                     },
                   ),
                 ],
-              ] else if (!_isCollaborativeMode && _terrainPoints.isNotEmpty) ...[
+              ] else if (!_isCollaborativeMode &&
+                  _terrainPoints.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Divider(height: 1, color: Colors.grey[300]),
                 const SizedBox(height: 8),
@@ -824,22 +833,27 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          
+
           // Botón para marcar punto del terreno
-          if (!_isAddingPoints)
-            const SizedBox(height: 12),
+          if (!_isAddingPoints) const SizedBox(height: 12),
           if (!_isAddingPoints)
             FloatingActionButton(
               heroTag: "addPoint",
               onPressed: () => _startTerrainMapping(),
-              backgroundColor: _isCollaborativeMode ? Colors.green[600] : Colors.purple[600],
+              backgroundColor: _isCollaborativeMode
+                  ? Colors.green[600]
+                  : Colors.purple[600],
               child: const Icon(Icons.add_location, color: Colors.white),
             ),
-          
+
           // Botón para limpiar todos los puntos (solo visible en modo colaborativo con puntos)
-          if (_isCollaborativeMode && _collaborativePoints.isNotEmpty && !_isAddingPoints)
+          if (_isCollaborativeMode &&
+              _collaborativePoints.isNotEmpty &&
+              !_isAddingPoints)
             const SizedBox(height: 12),
-          if (_isCollaborativeMode && _collaborativePoints.isNotEmpty && !_isAddingPoints)
+          if (_isCollaborativeMode &&
+              _collaborativePoints.isNotEmpty &&
+              !_isAddingPoints)
             FloatingActionButton(
               heroTag: "clearAllCollaborative",
               onPressed: () => _clearAllCollaborativePoints(),
@@ -850,9 +864,13 @@ class _MapScreenState extends State<MapScreen> {
           else if (_isAddingPoints) ...[
             FloatingActionButton(
               heroTag: "markPoint",
-              onPressed: _canMarkPoint(state) ? () => _markCurrentLocation(state) : null,
-              backgroundColor: _canMarkPoint(state) 
-                  ? (_isCollaborativeMode ? Colors.green[600] : Colors.purple[600])
+              onPressed: _canMarkPoint(state)
+                  ? () => _markCurrentLocation(state)
+                  : null,
+              backgroundColor: _canMarkPoint(state)
+                  ? (_isCollaborativeMode
+                        ? Colors.green[600]
+                        : Colors.purple[600])
                   : Colors.grey,
               child: const Icon(Icons.room, color: Colors.white),
             ),
@@ -870,15 +888,19 @@ class _MapScreenState extends State<MapScreen> {
               backgroundColor: Colors.red[600],
               child: Icon(
                 _isCollaborativeMode ? Icons.clear_all : Icons.clear,
-                color: Colors.white, 
-                size: 18
+                color: Colors.white,
+                size: 18,
               ),
             ),
             const SizedBox(height: 8),
             FloatingActionButton(
               heroTag: "saveTerrain",
-              onPressed: _canSaveTerrain() ? () => _showSaveTerrainDialog() : null,
-              backgroundColor: _canSaveTerrain() ? Colors.green[600] : Colors.grey,
+              onPressed: _canSaveTerrain()
+                  ? () => _showSaveTerrainDialog()
+                  : null,
+              backgroundColor: _canSaveTerrain()
+                  ? Colors.green[600]
+                  : Colors.grey,
               child: const Icon(Icons.save, color: Colors.white),
             ),
             const SizedBox(height: 8),
@@ -887,7 +909,8 @@ class _MapScreenState extends State<MapScreen> {
               FloatingActionButton.small(
                 heroTag: "refreshCollaborative",
                 onPressed: () {
-                  final activeSessionId = LocationService.getActiveCollaborativeSession();
+                  final activeSessionId =
+                      LocationService.getActiveCollaborativeSession();
                   if (activeSessionId != null) {
                     _loadInitialCollaborativePoints(activeSessionId);
                     Fluttertoast.showToast(
@@ -900,8 +923,7 @@ class _MapScreenState extends State<MapScreen> {
                 backgroundColor: Colors.blue[600],
                 child: const Icon(Icons.refresh, color: Colors.white, size: 18),
               ),
-            if (_isCollaborativeMode)
-              const SizedBox(height: 8),
+            if (_isCollaborativeMode) const SizedBox(height: 8),
             FloatingActionButton.small(
               heroTag: "cancelMapping",
               onPressed: () => _stopTerrainMapping(),
@@ -910,8 +932,6 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ],
 
-
-          
           const SizedBox(height: 12),
           // Botón de compartir ubicación
           FloatingActionButton(
@@ -928,7 +948,7 @@ class _MapScreenState extends State<MapScreen> {
   // Funciones para manejo del terreno
   String _getFormattedArea() {
     if (_terrainPoints.length < 3) return '0 m²';
-    
+
     // Usar puntos ordenados para cálculo correcto del área
     final area = Terrain.calculateArea(_orderedTerrainPoints);
     if (area < 10000) {
@@ -939,8 +959,6 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-
-
   void _startTerrainMapping() {
     if (!context.read<LocationBloc>().isTracking) {
       Fluttertoast.showToast(
@@ -950,17 +968,18 @@ class _MapScreenState extends State<MapScreen> {
       );
       return;
     }
-    
+
     setState(() {
       _isAddingPoints = true;
       _terrainPoints.clear();
     });
-    
+
     final modeText = _isCollaborativeMode ? 'colaborativo' : 'individual';
     final modeColor = _isCollaborativeMode ? Colors.green : Colors.purple;
-    
+
     Fluttertoast.showToast(
-      msg: 'Modo mapeo $modeText activado. Pulsa el botón para marcar tu ubicación actual',
+      msg:
+          'Modo mapeo $modeText activado. Pulsa el botón para marcar tu ubicación actual',
       backgroundColor: modeColor,
       textColor: Colors.white,
       toastLength: Toast.LENGTH_LONG,
@@ -972,7 +991,7 @@ class _MapScreenState extends State<MapScreen> {
       _isAddingPoints = false;
       _terrainPoints.clear();
     });
-    
+
     // Si es modo colaborativo, limpiar puntos de la sesión actual
     if (_isCollaborativeMode) {
       final activeSessionId = LocationService.getActiveCollaborativeSession();
@@ -1013,7 +1032,7 @@ class _MapScreenState extends State<MapScreen> {
         }
       }
     }
-    
+
     Fluttertoast.showToast(
       msg: 'Modo mapeo cancelado',
       backgroundColor: Colors.grey,
@@ -1022,9 +1041,9 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   bool _canMarkPoint(LocationState state) {
-    return _isAddingPoints && 
-           context.read<LocationBloc>().isTracking &&
-           (state is LocationTrackingActive || state is LocationUpdated);
+    return _isAddingPoints &&
+        context.read<LocationBloc>().isTracking &&
+        (state is LocationTrackingActive || state is LocationUpdated);
   }
   // Funciones originales removidas - reemplazadas por versiones colaborativas
   // Función removida - ahora se usa _saveIndividualTerrain() y _saveCollaborativeTerrain()
@@ -1036,11 +1055,11 @@ class _MapScreenState extends State<MapScreen> {
   LatLng? _lastValidPosition;
   Timer? _iconUpdateTimer;
   // Timer de BD removido - se gestiona desde LocationBloc
-  
+
   // Actualizar solo el ícono sin mover la cámara (para tracking visual)
   void _updateIconOnly(Position position) {
     final newCenter = LatLng(position.latitude, position.longitude);
-    
+
     // Filtrar posiciones con ruido GPS
     if (_lastValidPosition != null) {
       final distance = _calculateDistance(_lastValidPosition!, newCenter);
@@ -1051,9 +1070,9 @@ class _MapScreenState extends State<MapScreen> {
         return;
       }
     }
-    
+
     final distance = _calculateDistance(_currentCenter, newCenter);
-    
+
     // Actualizar solo si la distancia es significativa
     if (distance >= 3) {
       setState(() {
@@ -1066,7 +1085,7 @@ class _MapScreenState extends State<MapScreen> {
   // Actualizar solo el ícono (nunca mover cámara excepto en inicialización)
   void _updateMapCenter(Position position) {
     final newCenter = LatLng(position.latitude, position.longitude);
-    
+
     // Filtrar posiciones con ruido GPS más estricto
     if (_lastValidPosition != null) {
       final distance = _calculateDistance(_lastValidPosition!, newCenter);
@@ -1079,9 +1098,9 @@ class _MapScreenState extends State<MapScreen> {
         return;
       }
     }
-    
+
     final distance = _calculateDistance(_currentCenter, newCenter);
-    
+
     // Solo actualizar ícono si la distancia es significativa (mínimo 3 metros)
     if (distance >= 3) {
       setState(() {
@@ -1095,9 +1114,9 @@ class _MapScreenState extends State<MapScreen> {
   // Calcular distancia entre dos puntos LatLng
   double _calculateDistance(LatLng point1, LatLng point2) {
     return Geolocator.distanceBetween(
-      point1.latitude, 
-      point1.longitude, 
-      point2.latitude, 
+      point1.latitude,
+      point1.longitude,
+      point2.latitude,
       point2.longitude,
     );
   }
@@ -1119,8 +1138,14 @@ class _MapScreenState extends State<MapScreen> {
     // Ordenar puntos por ángulo desde el centroide
     List<TerrainPoint> sortedPoints = List.from(points);
     sortedPoints.sort((a, b) {
-      double angleA = math.atan2(a.latitude - centerLat, a.longitude - centerLng);
-      double angleB = math.atan2(b.latitude - centerLat, b.longitude - centerLng);
+      double angleA = math.atan2(
+        a.latitude - centerLat,
+        a.longitude - centerLng,
+      );
+      double angleB = math.atan2(
+        b.latitude - centerLat,
+        b.longitude - centerLng,
+      );
       return angleA.compareTo(angleB);
     });
 
@@ -1169,7 +1194,7 @@ class _MapScreenState extends State<MapScreen> {
   // Método para cargar ubicaciones según el contexto (equipo o sesión colaborativa)
   void _loadTeamOrSessionLocations() {
     final activeSessionId = LocationService.getActiveCollaborativeSession();
-    
+
     if (activeSessionId != null) {
       // Si hay una sesión colaborativa activa, cargar participantes de la sesión
       context.read<LocationBloc>().add(
@@ -1258,16 +1283,17 @@ class _MapScreenState extends State<MapScreen> {
   void _showDebugInfo() {
     final activeSessionId = LocationService.getActiveCollaborativeSession();
     final blocState = context.read<CollaborativeSessionBloc>().state;
-    
+
     String blocStateInfo = 'Desconocido';
     if (blocState is CollaborativeSessionLoaded) {
-      blocStateInfo = 'Loaded - Sesión activa: ${blocState.activeSession?.id ?? "Ninguna"}';
+      blocStateInfo =
+          'Loaded - Sesión activa: ${blocState.activeSession?.id ?? "Ninguna"}';
     } else if (blocState is CollaborativeSessionJoined) {
       blocStateInfo = 'Joined - Sesión: ${blocState.session.id}';
     } else {
       blocStateInfo = blocState.runtimeType.toString();
     }
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1278,14 +1304,21 @@ class _MapScreenState extends State<MapScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Modo colaborativo: $_isCollaborativeMode'),
-              Text('Sesión activa (LocationService): ${activeSessionId ?? "Ninguna"}'),
+              Text(
+                'Sesión activa (LocationService): ${activeSessionId ?? "Ninguna"}',
+              ),
               Text('Estado del BLoC: $blocStateInfo'),
               Text('Puntos colaborativos: ${_collaborativePoints.length}'),
               Text('Puntos individuales: ${_terrainPoints.length}'),
               Text('Está agregando puntos: $_isAddingPoints'),
-              Text('Stream activo: ${_collaborativePointsSubscription != null}'),
+              Text(
+                'Stream activo: ${_collaborativePointsSubscription != null}',
+              ),
               const SizedBox(height: 8),
-              Text('Puntos colaborativos:', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(
+                'Puntos colaborativos:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               for (final point in _collaborativePoints)
                 Text('  • Punto ${point.pointNumber} - ${point.userFullName}'),
             ],
@@ -1299,7 +1332,7 @@ class _MapScreenState extends State<MapScreen> {
           ElevatedButton(
             onPressed: () {
               _refreshCollaborativePoints();
-              _initializeCollaborativeMode(); 
+              _initializeCollaborativeMode();
               Navigator.of(context).pop();
               Fluttertoast.showToast(
                 msg: 'Modo colaborativo reinicializado',
@@ -1321,11 +1354,11 @@ class _MapScreenState extends State<MapScreen> {
   // Inicializar modo colaborativo si hay sesión activa
   void _initializeCollaborativeMode() {
     final activeSessionId = LocationService.getActiveCollaborativeSession();
-    
+
     setState(() {
       _isCollaborativeMode = activeSessionId != null;
     });
-    
+
     if (activeSessionId != null) {
       _startCollaborativePointsStream(activeSessionId);
       print('Modo colaborativo activado para sesión: $activeSessionId');
@@ -1338,12 +1371,12 @@ class _MapScreenState extends State<MapScreen> {
   void _startCollaborativePointsStream(String sessionId) {
     _collaborativePointsSubscription?.cancel();
     _collaborativePollingTimer?.cancel();
-    
+
     print('Iniciando stream colaborativo para sesión: $sessionId');
-    
+
     // Cargar puntos iniciales
     _loadInitialCollaborativePoints(sessionId);
-    
+
     // Intentar usar stream de Supabase
     try {
       _collaborativePointsSubscription = CollaborativeTerrainService()
@@ -1354,7 +1387,9 @@ class _MapScreenState extends State<MapScreen> {
                 setState(() {
                   _collaborativePoints = points;
                 });
-                print('Stream: Puntos colaborativos actualizados: ${points.length}');
+                print(
+                  'Stream: Puntos colaborativos actualizados: ${points.length}',
+                );
               }
             },
             onError: (error) {
@@ -1367,7 +1402,7 @@ class _MapScreenState extends State<MapScreen> {
       print('Error iniciando stream: $e');
       _startCollaborativePolling(sessionId);
     }
-    
+
     // Polling como respaldo adicional cada 3 segundos
     _startCollaborativePolling(sessionId);
   }
@@ -1375,17 +1410,21 @@ class _MapScreenState extends State<MapScreen> {
   // Polling como respaldo del stream
   void _startCollaborativePolling(String sessionId) {
     _collaborativePollingTimer?.cancel();
-    
-    _collaborativePollingTimer = Timer.periodic(Duration(seconds: 3), (_) async {
+
+    _collaborativePollingTimer = Timer.periodic(Duration(seconds: 3), (
+      _,
+    ) async {
       if (mounted && _isCollaborativeMode) {
         try {
-          final points = await CollaborativeTerrainService().getSessionTerrainPoints(sessionId);
+          final points = await CollaborativeTerrainService()
+              .getSessionTerrainPoints(sessionId);
           if (mounted) {
             // Comparar más que solo la longitud
             final currentIds = _collaborativePoints.map((p) => p.id).toSet();
             final newIds = points.map((p) => p.id).toSet();
-            
-            if (points.length != _collaborativePoints.length || !currentIds.containsAll(newIds)) {
+
+            if (points.length != _collaborativePoints.length ||
+                !currentIds.containsAll(newIds)) {
               setState(() {
                 _collaborativePoints = points;
               });
@@ -1402,7 +1441,8 @@ class _MapScreenState extends State<MapScreen> {
   // Cargar puntos colaborativos iniciales
   Future<void> _loadInitialCollaborativePoints(String sessionId) async {
     try {
-      final points = await CollaborativeTerrainService().getSessionTerrainPoints(sessionId);
+      final points = await CollaborativeTerrainService()
+          .getSessionTerrainPoints(sessionId);
       if (mounted) {
         setState(() {
           _collaborativePoints = points;
@@ -1430,7 +1470,9 @@ class _MapScreenState extends State<MapScreen> {
     if (_isCollaborativeMode) {
       // En modo colaborativo, verificar si el usuario tiene puntos propios
       final currentUserId = AuthService.currentUser?.id;
-      return _collaborativePoints.any((p) => p.userId == currentUserId);
+      return _collaborativePoints.any(
+        (p) => p.userId != null && p.userId == currentUserId,
+      );
     } else {
       return _terrainPoints.isNotEmpty;
     }
@@ -1456,7 +1498,10 @@ class _MapScreenState extends State<MapScreen> {
 
   // Obtener número de participantes únicos
   int _getUniqueParticipants() {
-    final uniqueUsers = _collaborativePoints.map((p) => p.userId).toSet();
+    final uniqueUsers = _collaborativePoints
+        .map((p) => p.userId)
+        .where((userId) => userId != null)
+        .toSet();
     return uniqueUsers.length;
   }
 
@@ -1466,8 +1511,10 @@ class _MapScreenState extends State<MapScreen> {
       final activeSessionId = LocationService.getActiveCollaborativeSession();
       if (activeSessionId == null) return '0 m²';
 
-      final area = await CollaborativeTerrainService().calculateTerrainArea(activeSessionId);
-      
+      final area = await CollaborativeTerrainService().calculateTerrainArea(
+        activeSessionId,
+      );
+
       if (area < 10000) {
         return '${area.toStringAsFixed(2)} m²';
       } else {
@@ -1483,9 +1530,11 @@ class _MapScreenState extends State<MapScreen> {
   // Obtener puntos colaborativos ordenados
   List<CollaborativeTerrainPoint> get _orderedCollaborativePoints {
     if (_collaborativePoints.length < 3) return _collaborativePoints;
-    
+
     // Ordenar por point_number
-    final sortedPoints = List<CollaborativeTerrainPoint>.from(_collaborativePoints);
+    final sortedPoints = List<CollaborativeTerrainPoint>.from(
+      _collaborativePoints,
+    );
     sortedPoints.sort((a, b) => a.pointNumber.compareTo(b.pointNumber));
     return sortedPoints;
   }
@@ -1558,11 +1607,12 @@ class _MapScreenState extends State<MapScreen> {
       );
 
       Fluttertoast.showToast(
-        msg: 'Punto ${result['point_number']} agregado (Total: ${result['total_points']})',
+        msg:
+            'Punto ${result['point_number']} agregado (Total: ${result['total_points']})',
         backgroundColor: Colors.green,
         textColor: Colors.white,
       );
-      
+
       // Forzar actualización inmediata
       Future.delayed(Duration(milliseconds: 500), () {
         if (mounted) {
@@ -1608,8 +1658,10 @@ class _MapScreenState extends State<MapScreen> {
     if (activeSessionId == null) return;
 
     try {
-      final success = await CollaborativeTerrainService().removeLastPoint(activeSessionId);
-      
+      final success = await CollaborativeTerrainService().removeLastPoint(
+        activeSessionId,
+      );
+
       if (success) {
         // Forzar actualización inmediata
         Future.delayed(Duration(milliseconds: 500), () {
@@ -1617,7 +1669,7 @@ class _MapScreenState extends State<MapScreen> {
             _loadInitialCollaborativePoints(activeSessionId);
           }
         });
-        
+
         Fluttertoast.showToast(
           msg: 'Tu último punto eliminado',
           backgroundColor: Colors.orange,
@@ -1688,23 +1740,23 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
 
-            if (confirm != true) return;
+    if (confirm != true) return;
 
     try {
       await CollaborativeTerrainService().clearAllPoints(activeSessionId);
-      
+
       // Forzar actualización inmediata
       setState(() {
         _collaborativePoints.clear();
       });
-      
+
       // Recargar después de un delay
       Future.delayed(Duration(milliseconds: 500), () {
         if (mounted) {
           _loadInitialCollaborativePoints(activeSessionId);
         }
       });
-      
+
       Fluttertoast.showToast(
         msg: 'Todos los puntos colaborativos eliminados',
         backgroundColor: Colors.red,
@@ -1844,9 +1896,7 @@ class _MapScreenState extends State<MapScreen> {
               FutureBuilder<String>(
                 future: _getCollaborativeFormattedArea(),
                 builder: (context, snapshot) {
-                  return Text(
-                    'Área: ${snapshot.data ?? "Calculando..."}',
-                  );
+                  return Text('Área: ${snapshot.data ?? "Calculando..."}');
                 },
               ),
               const SizedBox(height: 16),
@@ -1899,9 +1949,9 @@ class _MapScreenState extends State<MapScreen> {
     try {
       final success = await TerrainService.createTerrain(
         name: _terrainNameController.text.trim(),
-        description: _terrainDescriptionController.text.trim().isEmpty 
-          ? null 
-          : _terrainDescriptionController.text.trim(),
+        description: _terrainDescriptionController.text.trim().isEmpty
+            ? null
+            : _terrainDescriptionController.text.trim(),
         points: _orderedTerrainPoints,
         teamId: null, // FORZAR NULL para mediciones individuales
       );
@@ -1912,7 +1962,7 @@ class _MapScreenState extends State<MapScreen> {
           backgroundColor: Colors.green,
           textColor: Colors.white,
         );
-        
+
         setState(() {
           _terrainPoints.clear();
           _isAddingPoints = false;
@@ -1955,26 +2005,27 @@ class _MapScreenState extends State<MapScreen> {
     Navigator.of(context).pop();
 
     try {
-      final terrainId = await CollaborativeTerrainService().saveCollaborativeTerrain(
-        sessionId: activeSessionId,
-        name: _terrainNameController.text.trim(),
-        description: _terrainDescriptionController.text.trim().isEmpty 
-          ? null 
-          : _terrainDescriptionController.text.trim(),
-      );
+      final terrainId = await CollaborativeTerrainService()
+          .saveCollaborativeTerrain(
+            sessionId: activeSessionId,
+            name: _terrainNameController.text.trim(),
+            description: _terrainDescriptionController.text.trim().isEmpty
+                ? null
+                : _terrainDescriptionController.text.trim(),
+          );
 
       Fluttertoast.showToast(
         msg: 'Terreno colaborativo guardado exitosamente',
         backgroundColor: Colors.green,
         textColor: Colors.white,
       );
-      
+
       setState(() {
         _isAddingPoints = false;
       });
       _terrainNameController.clear();
       _terrainDescriptionController.clear();
-      
+
       print('Terreno colaborativo guardado con ID: $terrainId');
     } catch (e) {
       Fluttertoast.showToast(

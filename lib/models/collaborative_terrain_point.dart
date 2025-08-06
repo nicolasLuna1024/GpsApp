@@ -1,7 +1,7 @@
 class CollaborativeTerrainPoint {
   final String id;
-  final String collaborativeSessionId;
-  final String userId;
+  final String? collaborativeSessionId;
+  final String? userId;
   final String userFullName;
   final int pointNumber;
   final double latitude;
@@ -13,8 +13,8 @@ class CollaborativeTerrainPoint {
 
   CollaborativeTerrainPoint({
     required this.id,
-    required this.collaborativeSessionId,
-    required this.userId,
+    this.collaborativeSessionId,
+    this.userId,
     required this.userFullName,
     required this.pointNumber,
     required this.latitude,
@@ -27,16 +27,18 @@ class CollaborativeTerrainPoint {
 
   factory CollaborativeTerrainPoint.fromJson(Map<String, dynamic> json) {
     return CollaborativeTerrainPoint(
-      id: json['point_id'] ?? json['id'],
-      collaborativeSessionId: json['collaborative_session_id'],
-      userId: json['user_id'],
-      userFullName: json['user_full_name'] ?? 'Usuario',
-      pointNumber: json['point_number'],
-      latitude: (json['latitude'] as num).toDouble(),
-      longitude: (json['longitude'] as num).toDouble(),
+      id: json['point_id']?.toString() ?? json['id']?.toString() ?? '',
+      collaborativeSessionId: json['collaborative_session_id']?.toString(),
+      userId: json['user_id']?.toString(),
+      userFullName: json['user_full_name']?.toString() ?? 'Usuario',
+      pointNumber: json['point_number']?.toInt() ?? 0,
+      latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
+      longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
       altitude: json['altitude']?.toDouble(),
       accuracy: json['accuracy']?.toDouble(),
-      createdAt: DateTime.parse(json['created_at']),
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : DateTime.now(),
       isActive: json['is_active'] ?? true,
     );
   }
