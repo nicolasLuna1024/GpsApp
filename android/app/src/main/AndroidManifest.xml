@@ -11,7 +11,7 @@
     <application
         android:usesCleartextTraffic="true"
         android:foregroundServiceType="location"
-        android:label="app_final"
+        android:label="Topotracker"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <service android:name="rekab.app.background_locator.IsolateHolderService"
