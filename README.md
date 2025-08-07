@@ -2,6 +2,10 @@
 
 Una aplicación Flutter para el rastreo GPS colaborativo y mapeo de terrenos en tiempo real, diseñada para equipos de topografía.
 
+- Tienda: https://www.amazon.com/gp/product/B0FLF5VFXB
+- Despliegue: https://gpsapp-6e7e.onrender.com/
+- Video: https://www.youtube.com/watch?v=QdGOeBRyuc4
+
 ## 📋 Tabla de Contenidos
 
 - [Descripción General](#-descripción-general)
